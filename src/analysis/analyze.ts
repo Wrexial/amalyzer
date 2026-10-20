@@ -185,6 +185,10 @@ export async function analyzeReport(
     options.windowMode === 'fixed' || options.windowMode === 'shifting-sands'
       ? options.windowMode
       : 'prescience-buff';
+  if (windowMode !== 'fixed' && options.fight === 'all') {
+    throw new Error('All fights is only available in fixed (time) window mode');
+  }
+
   const prescienceDurationMs = options.prescienceDurationMs ?? 18_000;
   const shiftingSandsDurationMs = options.shiftingSandsDurationMs ?? 10_400;
   const windowMs = options.windowMs ?? 27_000;

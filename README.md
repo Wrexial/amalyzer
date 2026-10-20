@@ -283,6 +283,10 @@ If no aura events are found in any selected fight (no Augmentation Evoker was
 logged), the analysis falls back to the fixed grid and reports
 `windowModeFallback`.
 
+**All fights is only available in `fixed` (time) mode.** Prescience and
+Shifting Sands windows are intentionally limited to one fight per analysis;
+this keeps the per-window query count bounded and avoids overloading WCL.
+
 Windows for different fights no longer share timestamps, so each fight gets its
 own list; `aggregateDamage()` still merges by index. `toReportTime()` shifts the
 per-fight list into absolute time for the `table` query.

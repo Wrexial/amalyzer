@@ -75,6 +75,7 @@
       .grid { display: grid; gap: 14px; }
       .grid.cols-2 { grid-template-columns: 1fr 1fr; }
       .grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+      .grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 
       .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 
@@ -337,6 +338,26 @@
       .foot .gain { color: var(--good); font-weight: 600; }
       .foot .aug-gain { color: var(--accent-2); font-weight: 600; }
 
+      .compare-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+        gap: 18px;
+        align-items: start;
+      }
+      .compare-pane {
+        min-width: 0;
+        overflow-x: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 14px;
+      }
+      .compare-pane .report-title { font-size: 16px; }
+      .compare-pane .report-meta { margin-bottom: 8px; }
+      .compare-pane table { font-size: 13px; }
+      .compare-targets { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+      .compare-target { white-space: nowrap; }
+      .compare-value { color: var(--muted); font-variant-numeric: tabular-nums; }
+
       .target-dps { font-variant-numeric: tabular-nums; color: var(--muted); }
 
       .bar { height: 4px; border-radius: 3px; background: #1c2330; margin-top: 5px; overflow: hidden; }
@@ -449,6 +470,31 @@
           analysing you can switch between DPS and raw damage, hide Augmentation Evokers, or compare
           buffed vs unbuffed targets without re-querying.
         </p>
+
+        <div style="margin-top: 24px; border-top: 1px solid var(--border); padding-top: 18px">
+          <h2>Compare two runs</h2>
+          <div class="grid cols-3">
+            <div>
+              <label for="compareReport">Right report (blank = same)</label>
+              <input id="compareReport" placeholder="report URL or code" spellcheck="false" />
+            </div>
+            <div>
+              <label for="compareFight">Right fight(s)</label>
+              <input id="compareFight" value="last" placeholder="last, all, or comma-separated ids" spellcheck="false" />
+            </div>
+            <div>
+              <label for="compareAug">Right Aug Evoker</label>
+              <input id="compareAug" placeholder="name (blank = all)" spellcheck="false" />
+            </div>
+          </div>
+          <div class="row" style="margin-top: 12px">
+            <button id="compare" class="ghost">Compare runs</button>
+          </div>
+          <p class="hint">
+            Uses the same window source, fallback and target count as above. All fights is only
+            available in fixed interval mode. The right side may be a different report.
+          </p>
+        </div>
       </section>
 
       <section class="panel hidden" id="result-panel">
@@ -476,6 +522,11 @@
         <div id="results" style="margin-top: 8px"></div>
         <div class="foot" id="foot"></div>
       </section>
+
+      <section class="panel hidden" id="compare-panel">
+        <h2>Side by side</h2>
+        <div class="compare-grid" id="compare-grid"></div>
+      </section>
     </div>
 
     <script>
@@ -488,6 +539,7 @@
         windowMode: 'prescience-buff',
         fallbackByMode: { 'prescience-buff': 18_000, 'shifting-sands': 10_400 },
         collapsedPhases: new Set(),
+        comparison: null,
       };
       const STORAGE_KEY = 'amalyzer.wcl-credentials';
       const REPORTS_KEY = 'amalyzer.saved-reports';
@@ -837,6 +889,60 @@
         $('foot').replaceChildren();
       }
 
+      $('compare').addEventListener('click', async () => {
+        const leftReport = $('report').value.trim();
+        if (!leftReport) return setStatus('Paste a report URL first.', 'error');
+
+        const mode = $('windowMode').value;
+        const leftFight = $('fight').value;
+        const rightFight = $('compareFight').value.trim() || 'last';
+        if (mode !== 'fixed' && (leftFight === 'all' || rightFight === 'all')) {
+          return setStatus('All fights is only available in fixed interval mode.', 'error');
+        }
+
+        const rightReport = $('compareReport').value.trim() || leftReport;
+        const rightAug = $('compareAug').value.trim();
+        const shared = {
+          windowMode: mode,
+          ...(mode === 'shifting-sands'
+            ? { shiftingSandsDurationMs: Number($('prescienceMs').value) }
+            : { prescienceDurationMs: Number($('prescienceMs').value) }),
+          windowMs: Number($('windowMs').value),
+          offsetMs: Number($('offsetMs').value),
+          slots: Number($('slots').value),
+        };
+
+        const leftBody = {
+          report: leftReport,
+          fight: leftFight,
+          ...($('augmenter').value !== 'all'
+            ? { augmenterId: Number($('augmenter').value) }
+            : {}),
+          ...shared,
+        };
+        const rightBody = {
+          report: rightReport,
+          fight: rightFight,
+          ...(rightAug ? { augmenterName: rightAug } : {}),
+          ...shared,
+        };
+
+        $('compare').disabled = true;
+        setStatus('Analyzing both runs…');
+        try {
+          const left = await api('/api/damage', leftBody);
+          const right = await api('/api/damage', rightBody);
+          saveReport(leftReport, left.report);
+          if (rightReport !== leftReport) saveReport(rightReport, right.report);
+          renderComparison(left, right);
+          setStatus('', '');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        } finally {
+          $('compare').disabled = false;
+        }
+      });
+
       $('analyze').addEventListener('click', async () => {
         const report = $('report').value.trim();
         if (!report) return setStatus('Paste a report URL first.', 'error');
@@ -868,13 +974,21 @@
         }
       });
 
+      function refreshResults() {
+        if (state.comparison) {
+          renderComparison(state.comparison.left, state.comparison.right);
+        } else if (state.result) {
+          render(state.result);
+        }
+      }
+
       document.querySelectorAll('[data-metric]').forEach((button) => {
         button.addEventListener('click', () => {
           state.metric = button.dataset.metric;
           document
             .querySelectorAll('[data-metric]')
             .forEach((other) => other.classList.toggle('active', other === button));
-          if (state.result) render(state.result);
+          refreshResults();
         });
       });
 
@@ -892,6 +1006,10 @@
         $('windowMs').disabled = mode !== 'fixed';
         $('offsetMs').disabled = mode !== 'fixed';
 
+        const allOption = [...$('fight').options].find((option) => option.value === 'all');
+        if (allOption) allOption.disabled = mode !== 'fixed';
+        if (mode !== 'fixed' && $('fight').value === 'all') $('fight').value = 'last';
+
         const fallback = state.fallbackByMode[mode];
         if (mode !== 'fixed' && fallback != null) {
           $('prescienceMs').value = String(fallback);
@@ -899,15 +1017,122 @@
       }
 
       $('hideAug').addEventListener('change', () => {
-        if (state.result) render(state.result);
+        refreshResults();
       });
 
       $('buffFilter').addEventListener('change', () => {
-        if (state.result) render(state.result);
+        refreshResults();
       });
+
+      function buildComparePane(result) {
+        const pane = el('div', 'compare-pane');
+        const reference = result.fights.reduce((best, fight) => {
+          const duration = fight.endTime - fight.startTime;
+          return !best || duration > best.duration ? { fight, duration } : best;
+        }, null)?.fight;
+
+        pane.append(el('div', 'report-title', result.report.title));
+        const augs = [...new Set(result.windows.map((window) => window.aug?.name).filter(Boolean))];
+        pane.append(
+          el(
+            'div',
+            'report-meta',
+            `${result.report.code} · ${result.report.region}` +
+              (result.report.zone ? ` · ${result.report.zone}` : '') +
+              ` · ${result.windows.length} ${windowModeLabel(result.windowMode)}` +
+              (augs.length ? ` · ${augs.join(', ')}` : ''),
+          ),
+        );
+
+        const chips = el('div');
+        result.fights.forEach((fight) => {
+          chips.append(
+            el('span', 'chip', `#${fight.id} ${fight.kill ? 'kill' : 'wipe'} · ${fight.name}`),
+          );
+        });
+        pane.append(chips);
+
+        const table = el('table');
+        const head = el('thead');
+        const headRow = el('tr');
+        headRow.append(
+          el('th', '', 'Window'),
+          el('th', '', state.metric === 'average' ? 'Targets (damage)' : 'Targets (DPS)'),
+        );
+        head.append(headRow);
+        table.append(head);
+
+        const body = el('tbody');
+        const phases = (reference?.phases ?? []).length > 1 ? reference.phases : [];
+        let currentPhase;
+
+        result.windows.forEach((window) => {
+          const castInfo = reference?.casts?.[window.index];
+          const phaseTime =
+            result.windowMode !== 'fixed' && castInfo ? castInfo.startTime : window.startTime;
+          const phase = phases.length ? phaseAt(phases, phaseTime) : undefined;
+          const phaseId = phase?.id;
+          if (phaseId !== currentPhase) {
+            currentPhase = phaseId;
+            if (phase) {
+              const phaseRow = el('tr', 'phase-row');
+              const phaseCell = el('td', '', `Phase ${phase.id}`);
+              phaseCell.colSpan = 2;
+              phaseRow.append(phaseCell);
+              body.append(phaseRow);
+            }
+          }
+
+          const row = el('tr');
+          let windowText;
+          if (result.windowMode === 'fixed') {
+            windowText = `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
+          } else if (castInfo) {
+            windowText = `#${window.index + 1} · ${clock(castInfo.startTime)}–${clock(
+              castInfo.startTime + castInfo.durationMs,
+            )}`;
+          } else {
+            windowText = `#${window.index + 1}`;
+          }
+          row.append(el('td', 'time', windowText));
+
+          const cell = el('td');
+          const targets = el('div', 'compare-targets');
+          const slots = displayedAssignments(window);
+          if (!slots.length) {
+            targets.append(el('span', '', '—'));
+          } else {
+            slots.forEach((slot) => {
+              const slug = classSlug(slot.class);
+              const item = el('span', 'compare-target' + (slug ? ` class-${slug}` : ''));
+              item.append(el('span', '', slot.name));
+              item.append(el('span', 'compare-value', ` ${fmt(metricValue(slot))}`));
+              targets.append(item);
+            });
+          }
+          cell.append(targets);
+          row.append(cell);
+          body.append(row);
+        });
+
+        table.append(body);
+        pane.append(table);
+        return pane;
+      }
+
+      function renderComparison(left, right) {
+        state.comparison = { left, right };
+        state.result = null;
+        $('result-panel').classList.add('hidden');
+        $('compare-panel').classList.remove('hidden');
+        $('compare-grid').replaceChildren(buildComparePane(left), buildComparePane(right));
+        $('compare-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
 
       function render(result) {
         state.result = result;
+        state.comparison = null;
+        $('compare-panel').classList.add('hidden');
         $('view-controls').classList.remove('hidden');
         $('result-panel').classList.remove('hidden');
         $('report-title').textContent = result.report.title;
