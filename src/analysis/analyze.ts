@@ -17,7 +17,7 @@ import {
   selectFights,
 } from '../wcl/report.ts';
 import { buildPrescienceApplications, matchPrescienceRecipients } from '../wcl/prescience.ts';
-import { sumSupportByApplication } from '../wcl/support.ts';
+import { sumSupportByApplication, type SupportDamageEvent } from '../wcl/support.ts';
 import { PRESCIENCE_BUFF_ID, SHIFTING_SANDS_BUFF_ID } from '../wcl/queries.ts';
 import type { ReportFight, TimeWindow, WindowDamage } from '../wcl/types.ts';
 
@@ -211,6 +211,17 @@ export async function analyzeReport(
 
   const lookup = buildActorLookup(meta);
 
+  // WCL can attribute pet/guardian support damage to the pet's actor id. Resolve
+  // it to the owning player so it matches the buff application's target.
+  const resolveSupportEvents = (events: SupportDamageEvent[]): SupportDamageEvent[] =>
+    events.map((event) => {
+      if (event.supportID == null) return event;
+
+      const actor = lookup.get(event.supportID);
+      const ownerId = actor?.isPlayer === false ? actor.ownerId : undefined;
+      return ownerId != null ? { ...event, supportID: ownerId } : event;
+    });
+
   // Prescience casts first: one window per cast, per fight. Fights differ in
   // cast count/timing, so each gets its own list; the window index is the cast
   // ordinal, which keeps "the Nth Prescience" comparable across pulls.
@@ -233,12 +244,14 @@ export async function analyzeReport(
         );
         const supportByStart = sumSupportByApplication(
           applications,
-          await fetchSupportDamageEvents(
-            client,
-            code,
-            fight,
-            SHIFTING_SANDS_BUFF_ID,
-            augmenterId,
+          resolveSupportEvents(
+            await fetchSupportDamageEvents(
+              client,
+              code,
+              fight,
+              SHIFTING_SANDS_BUFF_ID,
+              augmenterId,
+            ),
           ),
           fight.startTime,
         );
@@ -353,7 +366,9 @@ export async function analyzeReport(
       );
       const supportByStart = sumSupportByApplication(
         applications,
-        await fetchSupportDamageEvents(client, code, fight, PRESCIENCE_BUFF_ID, augmenterId),
+        resolveSupportEvents(
+          await fetchSupportDamageEvents(client, code, fight, PRESCIENCE_BUFF_ID, augmenterId),
+        ),
         fight.startTime,
       );
       const casts = matchPrescienceRecipients(

@@ -221,7 +221,11 @@ Warcraft Logs records this as support damage events: the buff ability id
 and buckets them onto the matching buff application (`supportID` + `sourceID` +
 active interval), so a row means exactly "this player's buff damage from this
 Aug". The credited damage is summed per caster in the footer. Negative support
-events (known WCL quirk with stacked enemies) are kept as-is. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+events (known WCL quirk with stacked enemies) are kept as-is. Pet/guardian
+support events are resolved to their owning player before bucketing. Rows only
+show `WCL credited` when WCL actually emitted support events for that exact
+target/application; targets with no reattributable damage (or WCL-excluded
+sources such as tank/healing attribution) simply have no line. Recasts get a yellow **extended** badge and a yellow row tint, and a red
 **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
