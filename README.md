@@ -217,10 +217,12 @@ The first column is two lines: `#N - start - end - duration` (e.g.
 the class icon. Each row also shows the **WCL-reattributed support damage** for that window.
 Warcraft Logs records this as support damage events: the buff ability id
 (410089 / 413984), `sourceID` = the Aug, `supportID` = the buffed player, and
-`amount` = the credited damage. The analysis fetches those events for the fight
-and buckets them onto the matching buff application (`supportID` + `sourceID` +
-active interval), so a row means exactly "this player's buff damage from this
-Aug". The credited damage is summed per caster in the footer as **Selected buff
+`amount` = the credited damage. The analysis fetches those events for the fight (filtered to the buff/Fate
+Mirror ability ids) and buckets them onto the matching buff application
+(`supportID` + `sourceID` + active interval), so a row means exactly "this
+player's buff damage from this Aug". Querying only the buff abilities instead
+of every Aug damage event keeps multi-pull/all-fight analysis within WCL's
+limits. The credited damage is summed per caster in the footer as **Selected buff
 credit**. Negative support events (known WCL quirk with stacked enemies) are
 kept as-is. Pet/guardian support events are resolved to their owning player
 before bucketing. Rows only show `WCL credited` when WCL actually emitted
@@ -311,9 +313,10 @@ from. When WCL omits the transition into phase 1, a boundary at 0 is synthesised
 Each phase header is a collapsible button; collapse state is kept while
 toggling DPS/damage or filters.
 
-Player names are coloured with the WoW class colour and prefixed with the class
-icon from Wowhead's icon CDN (`classicon_<class>.jpg`). Icons fail soft: the
-image removes itself on error and the coloured name remains.
+Player names are coloured with the WoW class colour and prefixed with the
+**spec/actor icon WCL provides** (`masterData.actors[].icon`), falling back to
+the class icon (`classicon_<class>.jpg`). Icons fail soft: the image removes
+itself on error and the coloured name remains.
 
 The **DPS / Damage** segmented control switches the table between `dps`
 (normalised by window length) and `average` (raw expected damage inside the

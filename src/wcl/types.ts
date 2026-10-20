@@ -37,6 +37,8 @@ export type ReportActor = {
   /** Actor id of the owner when this actor is a pet/summon. */
   petOwner?: number;
   server?: string;
+  /** WCL actor/spec icon (URL, path or icon name). */
+  icon?: string;
 };
 
 export type PlayerDetailsEntry = {

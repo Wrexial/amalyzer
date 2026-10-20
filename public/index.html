@@ -599,16 +599,39 @@
       };
       const classSlug = (name) =>
         CLASS_SLUGS[String(name || '').toLowerCase().replace(/[^a-z]/g, '')] || '';
-      const classIcon = (name) => {
+      const classIconUrl = (name) => {
         const slug = classSlug(name);
-        if (!slug) return null;
+        return slug
+          ? `https://wow.zamimg.com/images/wow/icons/medium/classicon_${slug}.jpg`
+          : null;
+      };
+
+      /** Spec/actor icon from WCL, falling back to the class icon. */
+      const actorIcon = (icon, className) => {
+        let src = null;
+        if (icon) {
+          if (/^https?:\/\//i.test(icon)) src = icon;
+          else if (icon.startsWith('/')) src = `https://www.warcraftlogs.com${icon}`;
+          else {
+            const file = /\.[a-z]+$/i.test(icon) ? icon : `${icon}.jpg`;
+            src = `https://wow.zamimg.com/images/wow/icons/medium/${file}`;
+          }
+        } else {
+          src = classIconUrl(className);
+        }
+        if (!src) return null;
+
         const img = document.createElement('img');
         img.className = 'class-icon';
-        img.src = `https://wow.zamimg.com/images/wow/icons/medium/classicon_${slug}.jpg`;
-        img.alt = name;
+        img.src = src;
+        img.alt = className || '';
         img.loading = 'lazy';
         img.referrerPolicy = 'no-referrer';
-        img.addEventListener('error', () => img.remove());
+        img.addEventListener('error', () => {
+          const fallback = classIconUrl(className);
+          if (fallback && img.src !== fallback) img.src = fallback;
+          else img.remove();
+        });
         return img;
       };
       /** Last phase boundary at or before `timeMs` (fight-relative). */
@@ -1009,7 +1032,7 @@
               const slug = classSlug(targetClass);
               if (slug) line.classList.add(`class-${slug}`);
               line.title = `${auraName} target: ${castTarget.name}`;
-              const icon = classIcon(targetClass);
+              const icon = actorIcon(targetEntry?.icon, targetClass);
               if (icon) line.append(icon);
               line.append(el('span', 'nm', castTarget.name));
               if (targetEntry) {
@@ -1082,7 +1105,7 @@
             const slug = classSlug(card.class);
             const name = el('span', 'target-name' + (slug ? ` class-${slug}` : ''));
             name.title = card.class ? `${card.name} · ${card.class}` : card.name;
-            const icon = classIcon(card.class);
+            const icon = actorIcon(card.icon, card.class);
             if (icon) name.append(icon);
             name.append(el('span', 'nm', card.name));
             if (isBuffed && !isCastTarget) name.append(el('span', 'buff-badge', 'buffed'));

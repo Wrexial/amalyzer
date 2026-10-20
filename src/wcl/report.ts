@@ -318,9 +318,13 @@ export async function fetchSupportDamageEvents(
   client: WCLClient,
   code: string,
   fight: ReportFight,
+  abilityIds: number[],
   sourceId?: number,
 ): Promise<SupportDamageEvent[]> {
+  if (!abilityIds.length) return [];
+
   const events: SupportDamageEvent[] = [];
+  const filter = `ability.id in (${abilityIds.join(',')})`;
   let startTime = fight.startTime;
 
   for (let page = 0; page < 50; page += 1) {
@@ -329,6 +333,7 @@ export async function fetchSupportDamageEvents(
       fightId: fight.id,
       startTime,
       endTime: fight.endTime,
+      filter,
       ...(sourceId != null ? { sourceID: sourceId } : {}),
     });
 
@@ -393,6 +398,8 @@ export type ActorLookup = {
   class?: string;
   /** Spec names seen in `playerDetails`, e.g. `["Augmentation"]`. */
   specs?: string[];
+  /** WCL actor/spec icon (URL, path or icon name). */
+  icon?: string;
   /** Owner actor id when this is a pet/summon (used to credit pet damage). */
   ownerId?: number;
   /** Stable-ish key for grouping across fights: `name@server`. */
@@ -433,6 +440,7 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
     actorClass?: string,
     specs?: string[],
     ownerId?: number,
+    icon?: string,
   ) => {
     const existing = lookup.get(id);
     const player = players.get(id);
@@ -441,6 +449,7 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
     const resolvedClass = actorClass ?? existing?.class ?? player?.type;
     const resolvedSpecs = specs ?? existing?.specs ?? player?.specs?.map((entry) => entry.spec);
     const resolvedOwner = ownerId ?? existing?.ownerId;
+    const resolvedIcon = icon ?? existing?.icon;
 
     lookup.set(id, {
       id,
@@ -451,6 +460,7 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
       ...(resolvedClass ? { class: resolvedClass } : {}),
       ...(resolvedSpecs?.length ? { specs: resolvedSpecs } : {}),
       ...(resolvedOwner ? { ownerId: resolvedOwner } : {}),
+      ...(resolvedIcon ? { icon: resolvedIcon } : {}),
       key: `${name.toLowerCase()}@${(resolvedServer ?? '').toLowerCase()}`,
     });
   };
@@ -464,6 +474,7 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
       actor.type === 'Player' ? actor.subType : undefined,
       undefined,
       actor.petOwner,
+      actor.icon,
     ),
   );
   meta.players.forEach((player) =>

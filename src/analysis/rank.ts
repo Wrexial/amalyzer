@@ -8,6 +8,8 @@ export type AssignmentSlot = {
   class?: string;
   /** Spec names from playerDetails, used for client-side filtering. */
   specs?: string[];
+  /** WCL actor/spec icon. */
+  icon?: string;
   average: number;
   priority: boolean;
 };
@@ -60,6 +62,7 @@ export function buildAssignments(
         name: entry?.actor.name ?? key.split('@')[0] ?? key,
         ...(entry?.actor.class ? { class: entry.actor.class } : {}),
         ...(entry?.actor.specs?.length ? { specs: entry.actor.specs } : {}),
+        ...(entry?.actor.icon ? { icon: entry.actor.icon } : {}),
         average: entry?.average ?? 0,
         priority: true,
       });
@@ -75,6 +78,7 @@ export function buildAssignments(
         name: entry.actor.name,
         ...(entry.actor.class ? { class: entry.actor.class } : {}),
         ...(entry.actor.specs?.length ? { specs: entry.actor.specs } : {}),
+        ...(entry.actor.icon ? { icon: entry.actor.icon } : {}),
         average: entry.average,
         priority: false,
       });

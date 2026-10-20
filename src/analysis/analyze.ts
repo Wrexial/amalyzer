@@ -60,6 +60,8 @@ export type AnalyzeWindowEntry = {
   class?: string;
   /** Spec names from playerDetails, for client-side filters. */
   specs?: string[];
+  /** WCL actor/spec icon. */
+  icon?: string;
   /** Expected damage per second inside this window. */
   dps: number;
   /** Expected damage inside the window (not normalised by duration). */
@@ -87,6 +89,7 @@ export type AnalyzeWindow = {
     name: string;
     class?: string;
     specs?: string[];
+    icon?: string;
     dps: number;
     /** Raw expected damage in the window (pre-DPS). */
     average: number;
@@ -226,10 +229,18 @@ export async function analyzeReport(
   );
   const buffSupportNames =
     windowMode === 'shifting-sands' ? ['shifting sands'] : ['prescience', 'fate mirror'];
-  const buffSupportIds =
-    windowMode === 'shifting-sands'
-      ? [SHIFTING_SANDS_BUFF_ID]
-      : [PRESCIENCE_BUFF_ID, 412774, 413786];
+  const buffSupportIds = [
+    ...new Set([
+      ...meta.abilities
+        .filter((ability) =>
+          buffSupportNames.some((name) => ability.name.toLowerCase().includes(name)),
+        )
+        .map((ability) => ability.id),
+      ...(windowMode === 'shifting-sands'
+        ? [SHIFTING_SANDS_BUFF_ID]
+        : [PRESCIENCE_BUFF_ID, 412774, 413786]),
+    ]),
+  ];
 
   const filterBuffSupportEvents = (events: SupportDamageEvent[]): SupportDamageEvent[] =>
     events.filter((event) => {
@@ -267,7 +278,7 @@ export async function analyzeReport(
             ? (
                 await Promise.all(
                   augmenters.map((actor) =>
-                    fetchSupportDamageEvents(client, code, fight, actor.id),
+                    fetchSupportDamageEvents(client, code, fight, buffSupportIds, actor.id),
                   ),
                 )
               ).flat()
@@ -690,6 +701,7 @@ export async function analyzeReport(
         ...(entry.actor.server ? { server: entry.actor.server } : {}),
         ...(entry.actor.class ? { class: entry.actor.class } : {}),
         ...(entry.actor.specs?.length ? { specs: entry.actor.specs } : {}),
+        ...(entry.actor.icon ? { icon: entry.actor.icon } : {}),
         dps: Math.round(damagePerSecond(entry, row.window)),
         average: entry.average,
         samples: entry.count,
@@ -698,11 +710,13 @@ export async function analyzeReport(
         const entry = row.entries.find((candidate) => candidate.actor.key === slot.key);
         const className = entry?.actor.class ?? slot.class;
         const specs = entry?.actor.specs ?? slot.specs;
+        const icon = entry?.actor.icon ?? slot.icon;
         return {
           key: slot.key,
           name: slot.name,
           ...(className ? { class: className } : {}),
           ...(specs?.length ? { specs } : {}),
+          ...(icon ? { icon } : {}),
           dps: entry ? Math.round(damagePerSecond(entry, row.window)) : 0,
           average: slot.average,
           priority: slot.priority,

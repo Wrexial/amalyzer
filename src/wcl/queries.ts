@@ -60,6 +60,7 @@ export const REPORT_META_QUERY = /* GraphQL */ `
             subType
             petOwner
             server
+            icon
           }
         }
         playerDetails(startTime: 0, endTime: 2147483647)
@@ -347,6 +348,7 @@ export const SUPPORT_DAMAGE_QUERY = /* GraphQL */ `
     $startTime: Float!
     $endTime: Float!
     $sourceID: Int
+    $filter: String
   ) {
     reportData {
       report(code: $code) {
@@ -356,6 +358,7 @@ export const SUPPORT_DAMAGE_QUERY = /* GraphQL */ `
           startTime: $startTime
           endTime: $endTime
           sourceID: $sourceID
+          filterExpression: $filter
           limit: 10000
         ) {
           data
