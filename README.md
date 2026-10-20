@@ -1,5 +1,7 @@
 # Amalyzer
 
+**Live:** <https://amalyzer.netlify.app> · **Repo:** <https://github.com/Wrexial/amalyzer>
+
 A small, dependency-free TypeScript core for reading **Warcraft Logs** reports and
 answering "who was doing damage in this N-second window, per fight, averaged over
 a set of pulls".
@@ -69,6 +71,12 @@ npx netlify deploy --build --prod
 
 Netlify build runs `npm run build` (a typecheck) and bundles the function with
 esbuild, so the `.ts` sources are compiled at deploy time.
+
+The site (`amalyzer`, id `9357faa4-c93b-4862-98a7-c142afb0655b`) was created and
+deployed from the CLI. To get push-to-deploy, connect the repo once in the
+Netlify UI: **Project configuration → Build & deploy → Link repository** and pick
+`Wrexial/amalyzer` (build `npm run build`, publish `public`). After that, every
+push to `main` deploys.
 
 ## Pipeline
 

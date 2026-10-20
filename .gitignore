@@ -3,3 +3,6 @@ node_modules/
 .env
 .reference/
 *.log
+
+# Local Netlify folder
+.netlify
