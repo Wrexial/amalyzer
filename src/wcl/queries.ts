@@ -3,7 +3,9 @@ import type { EncounterRankings, PlayerDetailsData, ReportActor, ReportFight, Re
 /**
  * Report metadata + every fight + actor table, in one request.
  *
- * `playerDetails` is a JSON scalar: you select `data` and nothing deeper.
+ * `playerDetails` is a JSON scalar: it takes no sub-selection at all (adding
+ * `{ data }` is a GraphQL error). The scalar's value is
+ * `{ data: { playerDetails: { tanks, healers, dps } } }` — see `PlayerDetailsData`.
  * `endTime: 2147483647` is the max int, i.e. "whole report" — WCL rejects
  * open-ended ranges on this field.
  */
@@ -48,9 +50,7 @@ export const REPORT_META_QUERY = /* GraphQL */ `
             server
           }
         }
-        playerDetails(startTime: 0, endTime: 2147483647) {
-          data
-        }
+        playerDetails(startTime: 0, endTime: 2147483647)
       }
     }
   }
@@ -61,15 +61,17 @@ export type ReportMetaResponse = {
     report:
       | (Omit<ReportMeta, 'actors' | 'players'> & {
           masterData: { actors: ReportActor[] };
-          playerDetails: { data: PlayerDetailsData };
+          playerDetails: PlayerDetailsData | null;
         })
       | null;
   };
 };
 
-export function flattenPlayerDetails(data: PlayerDetailsData | undefined) {
-  if (!data?.playerDetails) return [];
-  const { tanks = [], healers = [], dps = [] } = data.playerDetails;
+/** `report.playerDetails` is a JSON scalar: `{ data: { playerDetails } }`. */
+export function flattenPlayerDetails(details: PlayerDetailsData | null | undefined) {
+  const grouped = details?.data?.playerDetails ?? details?.playerDetails;
+  if (!grouped) return [];
+  const { tanks = [], healers = [], dps = [] } = grouped;
   return [...tanks, ...healers, ...dps];
 }
 

@@ -45,12 +45,19 @@ export type PlayerDetailsEntry = {
   specs?: { spec: string; count: number }[];
 };
 
+export type PlayerDetailsGroups = {
+  tanks: PlayerDetailsEntry[];
+  healers: PlayerDetailsEntry[];
+  dps: PlayerDetailsEntry[];
+};
+
+/**
+ * Value of the `report.playerDetails` JSON scalar. WCL wraps it in a `data`
+ * object; `playerDetails` directly on the value is tolerated as a fallback.
+ */
 export type PlayerDetailsData = {
-  playerDetails: {
-    tanks: PlayerDetailsEntry[];
-    healers: PlayerDetailsEntry[];
-    dps: PlayerDetailsEntry[];
-  };
+  data?: { playerDetails?: PlayerDetailsGroups };
+  playerDetails?: PlayerDetailsGroups;
 };
 
 export type ReportMeta = {

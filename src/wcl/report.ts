@@ -65,7 +65,7 @@ export async function fetchReportMeta(
     zone: report.zone,
     fights: report.fights,
     actors: report.masterData.actors,
-    players: flattenPlayerDetails(report.playerDetails.data),
+    players: flattenPlayerDetails(report.playerDetails),
   };
 }
 

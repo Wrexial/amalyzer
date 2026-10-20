@@ -123,9 +123,11 @@ One query gets the report, all fights and the actor table:
   not names.
 - `report.masterData.actors` — id → name/type/server for players, pets and NPCs.
   This is the reliable name source for damage table entries.
-- `report.playerDetails(startTime: 0, endTime: 2147483647)` — JSON scalar
-  (`data`), used for "is this a player and what realm". The max-int end time is
-  required; WCL rejects open-ended ranges here.
+- `report.playerDetails(startTime: 0, endTime: 2147483647)` — JSON scalar, so
+  it is selected with **no** sub-selection (a `{ data }` block is a GraphQL
+  error). Its value is `{ data: { playerDetails: { tanks, healers, dps } } }`,
+  used for "is this a player and what realm". The max-int end time is required;
+  WCL rejects open-ended ranges here.
 
 `playerDetails` ids and `table.entries[].id` are the same actor ids. WCL may
 serialise one side as a string, so the code normalises with `Number(...)` before
