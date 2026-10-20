@@ -123,7 +123,7 @@
       }
 
       table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      th:first-child, td:first-child { width: 205px; }
+      th:first-child, td:first-child { width: 245px; }
 
       th {
         text-align: left;
@@ -698,7 +698,8 @@
         const table = el('table');
         const head = el('thead');
         const headRow = el('tr');
-        const windowHeading = result.windowMode === 'fixed' ? 'Window' : 'Prescience (# - cast - duration)';
+        const windowHeading =
+          result.windowMode === 'fixed' ? 'Window' : 'Prescience (# - start - end - duration)';
         [windowHeading, state.metric === 'average' ? 'Targets (damage)' : 'Targets (DPS)'].forEach(
           (title) => headRow.append(el('th', '', title)),
         );
@@ -754,7 +755,9 @@
             windowText = `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
           } else if (castInfo) {
             const seconds = (castInfo.durationMs / 1000).toFixed(1);
-            windowText = `#${window.index + 1} - ${clock(castInfo.startTime)} - ${seconds}s`;
+            const end = castInfo.startTime + castInfo.durationMs;
+            windowText =
+              `#${window.index + 1} - ${clock(castInfo.startTime)} - ${clock(end)} - ${seconds}s`;
           } else {
             windowText = `#${window.index + 1}`;
           }

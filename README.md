@@ -211,8 +211,8 @@ How it is built:
    of every pull.
 3. There is no start offset: the first window begins at the first cast.
 
-The first column renders that as `#N - cast time - duration`, e.g.
-`#2 - 0:09 - 18.4s`.
+The first column renders that as `#N - start - end - duration`, e.g.
+`#2 - 0:09 - 0:28 - 18.4s`.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
 `--prescience-duration`) is only a fallback for missing removal events.
