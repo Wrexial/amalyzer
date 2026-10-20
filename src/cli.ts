@@ -114,6 +114,7 @@ async function commandDamage(client: WCLClient, input: string, flags: Flags) {
     offsetMs: numFlag(flags, 'offset', 4000),
     slots: numFlag(flags, 'slots', 4),
     ...(flags['max-windows'] ? { maxWindows: numFlag(flags, 'max-windows', 0) } : {}),
+    ...(flags['exclude-augmentation'] ? { excludeAugmentation: true } : {}),
     ...(flags.filter === 'none'
       ? { filterExpression: '' }
       : flags.filter && flags.filter !== true
@@ -185,7 +186,7 @@ function printUsage() {
       '  meta <report-url|code> [--encounter <id>]',
       '  damage <report-url|code> [--fight <id|last|all>] [--encounter <id>]',
       '         [--window 27000] [--offset 4000] [--slots 4]',
-      '         [--filter <expr|none>] [--max-windows <n>] [--json]',
+      '         [--filter <expr|none>] [--max-windows <n>] [--exclude-augmentation] [--json]',
       '  rankings <name> <serverSlug> <region> --encounter <id> --difficulty <id>',
       '         [--spec <specName>] [--partition <n>]',
     ].join('\n'),

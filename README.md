@@ -23,7 +23,7 @@ awareness.
 npm install
 cp .env.example .env        # fill in WCL_CLIENT_ID / WCL_CLIENT_SECRET
 
-npm test                    # 19 unit tests, no network
+npm test                    # unit tests, no network
 npm run typecheck
 
 npm run cli -- token
@@ -62,7 +62,7 @@ invocations. No secret is ever stored server-side.
 |---|---|---|
 | `POST /api/login` | `{clientId, clientSecret}` | validates the pair against WCL |
 | `POST /api/meta` | `{report}` | fights + durations; requires credential headers |
-| `POST /api/damage` | `{report, fight, windowMs, offsetMs, slots, ...}` | `AnalyzeResult`; requires credential headers |
+| `POST /api/damage` | `{report, fight, windowMs, offsetMs, slots, excludeAugmentation, ...}` | `AnalyzeResult`; requires credential headers |
 
 ```bash
 npx netlify dev                 # http://localhost:8888, functions included
@@ -211,6 +211,24 @@ subtle enough to state explicitly:
 `buildAssignments()` then applies exclusion, then forced picks in the given
 order, then damage order, and returns `slots` targets per window.
 
+### Display
+
+The UI groups window rows by fight phase. WCL documents
+`phaseTransitions[].startTime` as **report-relative**, so `fightPhases()`
+subtracts the fight start and feeds the fight-relative grid; the longest selected
+fight supplies the boundaries, since it is also the fight the window grid is cut
+from. When WCL omits the transition into phase 1, a boundary at 0 is synthesised.
+
+Player names are coloured with the WoW class colour and prefixed with the class
+icon from Wowhead's icon CDN (`classicon_<class>.jpg`). Icons fail soft: the
+image removes itself on error and the coloured name remains.
+
+The **Hide Augmentation Evokers** checkbox sends `excludeAugmentation` to the
+API. Players whose `playerDetails` entry is Evoker with an Augmentation spec are
+dropped from the aggregated entries *before* `buildAssignments()` runs, so they
+neither appear nor consume a slot. The CLI equivalent is
+`--exclude-augmentation`.
+
 ## The "best logs" path
 
 Instead of asking the user for report URLs, you can find good kills yourself:
@@ -236,8 +254,9 @@ classes with multiple roles (e.g. Feral/Guardian).
 - Token caching, 401 refresh, 429/5xx backoff and optional request throttling.
 - Actor ids normalised before joining; `masterData.actors` used as the primary
   name source.
-- No UI, no state management, no analytics/Sentry. Plain functions you can call
-  from a server route, a worker or a UI.
+- A dependency-free UI (`public/index.html`) with phase grouping, class colours
+  and icons; the core stays plain functions you can call from a server route, a
+  worker or another UI. No state management, no analytics/Sentry.
 
 ## Extending it
 

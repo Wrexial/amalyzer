@@ -146,8 +146,46 @@
 
       .target-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
 
-      .target-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .target-name { display: flex; align-items: center; gap: 5px; min-width: 0; }
+      .target-name .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .target.prio .target-name { color: var(--accent); }
+
+      .class-icon { width: 16px; height: 16px; border-radius: 3px; flex: none; }
+      .class-deathknight { color: #c41f3b; }
+      .class-demonhunter { color: #a330c9; }
+      .class-druid { color: #ff7d0a; }
+      .class-evoker { color: #33937f; }
+      .class-hunter { color: #abd473; }
+      .class-mage { color: #3fc7eb; }
+      .class-monk { color: #00ff98; }
+      .class-paladin { color: #f48cba; }
+      .class-priest { color: #ffffff; }
+      .class-rogue { color: #fff468; }
+      .class-shaman { color: #0070dd; }
+      .class-warlock { color: #8788ee; }
+      .class-warrior { color: #c69b6d; }
+
+      tr.phase-row td {
+        padding: 20px 10px 6px;
+        border-bottom: 1px solid var(--border);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--accent);
+        font-weight: 600;
+      }
+      tbody tr:first-child.phase-row td { padding-top: 8px; }
+
+      label.check {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        margin: 0 4px 0 0;
+        font-size: 13px;
+        color: var(--text);
+        cursor: pointer;
+      }
+      label.check input { width: auto; margin: 0; accent-color: var(--accent); }
 
       .target-dps { font-variant-numeric: tabular-nums; color: var(--muted); }
 
@@ -226,6 +264,7 @@
         <div class="row" style="margin-top: 16px">
           <button id="analyze">Analyze</button>
           <button id="load" class="ghost">Load fights</button>
+          <label class="check" for="hideAug"><input id="hideAug" type="checkbox" /> Hide Augmentation Evokers</label>
           <button id="logout" class="ghost" style="margin-left: auto">Disconnect</button>
         </div>
         <p class="hint">
@@ -274,6 +313,45 @@
       const clock = (ms) => {
         const total = Math.round(ms / 1000);
         return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+      };
+
+      const CLASS_SLUGS = {
+        deathknight: 'deathknight',
+        demonhunter: 'demonhunter',
+        druid: 'druid',
+        evoker: 'evoker',
+        hunter: 'hunter',
+        mage: 'mage',
+        monk: 'monk',
+        paladin: 'paladin',
+        priest: 'priest',
+        rogue: 'rogue',
+        shaman: 'shaman',
+        warlock: 'warlock',
+        warrior: 'warrior',
+      };
+      const classSlug = (name) =>
+        CLASS_SLUGS[String(name || '').toLowerCase().replace(/[^a-z]/g, '')] || '';
+      const classIcon = (name) => {
+        const slug = classSlug(name);
+        if (!slug) return null;
+        const img = document.createElement('img');
+        img.className = 'class-icon';
+        img.src = `https://wow.zamimg.com/images/wow/icons/medium/classicon_${slug}.jpg`;
+        img.alt = name;
+        img.loading = 'lazy';
+        img.referrerPolicy = 'no-referrer';
+        img.addEventListener('error', () => img.remove());
+        return img;
+      };
+      /** Last phase boundary at or before `timeMs` (fight-relative). */
+      const phaseAt = (phases, timeMs) => {
+        let current;
+        for (const phase of phases) {
+          if (phase.startTime > timeMs) break;
+          current = phase;
+        }
+        return current;
       };
 
       function setStatus(message, kind = '') {
@@ -400,6 +478,7 @@
             windowMs: Number($('windowMs').value),
             offsetMs: Number($('offsetMs').value),
             slots: Number($('slots').value),
+            excludeAugmentation: $('hideAug').checked,
           });
           render(result);
           setStatus('', '');
@@ -433,7 +512,38 @@
 
         const body = el('tbody');
 
+        // Phases come from the longest selected fight, which is also the fight
+        // the window grid is cut from.
+        const reference = result.fights.reduce((best, fight) => {
+          const duration = fight.endTime - fight.startTime;
+          return !best || duration > best.duration ? { fight, duration } : best;
+        }, null)?.fight;
+        const referencePhases = reference?.phases ?? [];
+        // A single phase adds a header without splitting anything; skip it.
+        const phases = referencePhases.length > 1 ? referencePhases : [];
+        if (phases.length && result.fights.length > 1) {
+          $('report-meta').textContent += ` · phases from #${reference.id}`;
+        }
+
+        let currentPhase;
         result.windows.forEach((window) => {
+          const phase = phases.length ? phaseAt(phases, window.startTime) : undefined;
+          const phaseId = phase ? phase.id : undefined;
+          if (phaseId !== currentPhase) {
+            currentPhase = phaseId;
+            if (phase) {
+              const phaseRow = el('tr', 'phase-row');
+              const label =
+                phase.startTime > 0
+                  ? `Phase ${phase.id} · from ${clock(phase.startTime)}`
+                  : `Phase ${phase.id}`;
+              const cell = el('td', '', label);
+              cell.colSpan = 2;
+              phaseRow.append(cell);
+              body.append(phaseRow);
+            }
+          }
+
           const row = el('tr');
           row.append(el('td', 'time', `${clock(window.startTime)}–${clock(window.endTime + 1)}`));
 
@@ -444,7 +554,13 @@
           window.assignments.forEach((slot) => {
             const target = el('div', 'target' + (slot.priority ? ' prio' : ''));
             const top = el('div', 'target-top');
-            top.append(el('span', 'target-name', slot.name));
+            const slug = classSlug(slot.class);
+            const name = el('span', 'target-name' + (slug ? ` class-${slug}` : ''));
+            name.title = slot.class ? `${slot.name} · ${slot.class}` : slot.name;
+            const icon = classIcon(slot.class);
+            if (icon) name.append(icon);
+            name.append(el('span', 'nm', slot.name));
+            top.append(name);
             top.append(el('span', 'target-dps', fmt(slot.dps)));
             const bar = el('div', 'bar');
             const fill = el('i');

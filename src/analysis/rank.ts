@@ -4,6 +4,8 @@ import type { TimeWindow } from '../wcl/types.ts';
 export type AssignmentSlot = {
   key: string;
   name: string;
+  /** Class name for colour coding, when known. */
+  class?: string;
   average: number;
   priority: boolean;
 };
@@ -54,6 +56,7 @@ export function buildAssignments(
       chosen.push({
         key,
         name: entry?.actor.name ?? key.split('@')[0] ?? key,
+        ...(entry?.actor.class ? { class: entry.actor.class } : {}),
         average: entry?.average ?? 0,
         priority: true,
       });
@@ -67,6 +70,7 @@ export function buildAssignments(
       chosen.push({
         key: entry.actor.key,
         name: entry.actor.name,
+        ...(entry.actor.class ? { class: entry.actor.class } : {}),
         average: entry.average,
         priority: false,
       });

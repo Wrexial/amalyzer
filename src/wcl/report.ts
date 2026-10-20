@@ -122,34 +122,75 @@ export type ActorLookup = {
   id: number;
   name: string;
   server?: string;
+  /** Class name (e.g. "Death Knight") when WCL classified the actor as a player. */
+  class?: string;
+  /** Spec names seen in `playerDetails`, e.g. `["Augmentation"]`. */
+  specs?: string[];
   /** Stable-ish key for grouping across fights: `name@server`. */
   key: string;
 };
 
 /**
+ * True for a player who played Augmentation Evoker in this report.
+ *
+ * A player with more than one spec in the report counts as Augmentation; the
+ * filter is intentionally coarse so alts swapping specs don't leak through.
+ */
+export function isAugmentationEvoker(
+  actor: Pick<ActorLookup, 'class' | 'specs'>,
+): boolean {
+  return (
+    actor.class?.toLowerCase() === 'evoker' &&
+    (actor.specs ?? []).some((spec) => spec.toLowerCase() === 'augmentation')
+  );
+}
+
+/**
  * Builds the actor id -> name map.
  *
  * `masterData.actors` is the reliable source (includes pets and NPCs);
- * `playerDetails` is the reliable source for "is this a player, and what realm".
+ * `playerDetails` is the reliable source for "is this a player, what realm and
+ * which specs".
  */
 export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
   const lookup = new Map<number, ActorLookup>();
-  const playerServers = new Map(meta.players.map((player) => [player.id, player.server]));
+  const players = new Map(meta.players.map((player) => [player.id, player]));
 
-  const add = (id: number, name: string, server?: string) => {
+  const add = (
+    id: number,
+    name: string,
+    server?: string,
+    actorClass?: string,
+    specs?: string[],
+  ) => {
     const existing = lookup.get(id);
-    const resolvedServer = server ?? existing?.server ?? playerServers.get(id);
+    const player = players.get(id);
+    const resolvedServer = server ?? existing?.server ?? player?.server;
+    const resolvedClass = actorClass ?? existing?.class ?? player?.type;
+    const resolvedSpecs = specs ?? existing?.specs ?? player?.specs?.map((entry) => entry.spec);
 
     lookup.set(id, {
       id,
       name,
       ...(resolvedServer ? { server: resolvedServer } : {}),
+      ...(resolvedClass ? { class: resolvedClass } : {}),
+      ...(resolvedSpecs?.length ? { specs: resolvedSpecs } : {}),
       key: `${name.toLowerCase()}@${(resolvedServer ?? '').toLowerCase()}`,
     });
   };
 
-  meta.actors.forEach((actor) => add(actor.id, actor.name, actor.server));
-  meta.players.forEach((player) => add(player.id, player.name, player.server));
+  meta.actors.forEach((actor) =>
+    add(actor.id, actor.name, actor.server, actor.type === 'Player' ? actor.subType : undefined),
+  );
+  meta.players.forEach((player) =>
+    add(
+      player.id,
+      player.name,
+      player.server,
+      player.type,
+      player.specs?.map((entry) => entry.spec),
+    ),
+  );
 
   return lookup;
 }

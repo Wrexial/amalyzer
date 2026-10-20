@@ -136,6 +136,9 @@ export async function handleApi(request: ApiRequest): Promise<ApiResponse> {
         ...(asOptionalNumber(body.maxWindows, 'maxWindows') !== undefined
           ? { maxWindows: asOptionalNumber(body.maxWindows, 'maxWindows')! }
           : {}),
+        ...(body.excludeAugmentation === true || body.excludeAugmentation === 'true'
+          ? { excludeAugmentation: true }
+          : {}),
       });
 
       return { status: 200, body: result };

@@ -1,4 +1,5 @@
 import { damagePerSecond, aggregateDamage } from './aggregate.ts';
+import { fightPhases, type PhaseBoundary } from './phases.ts';
 import { buildAssignments } from './rank.ts';
 import { buildWindows, toReportTime } from './windows.ts';
 import type { WCLClient, RateLimitInfo } from '../wcl/client.ts';
@@ -7,6 +8,7 @@ import {
   buildActorLookup,
   fetchDamageWindows,
   fetchReportMeta,
+  isAugmentationEvoker,
   parseReportInput,
   selectFights,
 } from '../wcl/report.ts';
@@ -22,12 +24,16 @@ export type AnalyzeOptions = {
   /** Empty string disables server-side ability filtering. */
   filterExpression?: string;
   maxWindows?: number;
+  /** Drop Augmentation Evokers from the rankings and assignments. */
+  excludeAugmentation?: boolean;
 };
 
 export type AnalyzeWindowEntry = {
   key: string;
   name: string;
   server?: string;
+  /** Class name, for colour coding and icons in the UI. */
+  class?: string;
   /** Expected damage per second inside this window. */
   dps: number;
   /** Expected damage inside the window (not normalised by duration). */
@@ -40,12 +46,20 @@ export type AnalyzeWindow = {
   startTime: number;
   endTime: number;
   entries: AnalyzeWindowEntry[];
-  assignments: { key: string; name: string; dps: number; priority: boolean }[];
+  assignments: { key: string; name: string; class?: string; dps: number; priority: boolean }[];
+};
+
+export type AnalyzeFight = Pick<
+  ReportFight,
+  'id' | 'encounterID' | 'name' | 'kill' | 'difficulty' | 'startTime' | 'endTime'
+> & {
+  /** Fight-relative phase boundaries parsed from WCL's report-relative transitions. */
+  phases: PhaseBoundary[];
 };
 
 export type AnalyzeResult = {
   report: { code: string; title: string; region: string; zone: string | null };
-  fights: Pick<ReportFight, 'id' | 'encounterID' | 'name' | 'kill' | 'difficulty' | 'startTime' | 'endTime'>[];
+  fights: AnalyzeFight[];
   windows: AnalyzeWindow[];
   rateLimit: RateLimitInfo;
 };
@@ -124,7 +138,18 @@ export async function analyzeReport(
   }
 
   const aggregated = aggregateDamage(perFight, lookup);
-  const assignments = buildAssignments(aggregated, { slots });
+  const excludedActors = options.excludeAugmentation
+    ? new Set(
+        [...lookup.values()].filter((actor) => isAugmentationEvoker(actor)).map((actor) => actor.key),
+      )
+    : new Set<string>();
+  const visible = excludedActors.size
+    ? aggregated.map((row) => ({
+        ...row,
+        entries: row.entries.filter((entry) => !excludedActors.has(entry.actor.key)),
+      }))
+    : aggregated;
+  const assignments = buildAssignments(visible, { slots });
   const assignmentByIndex = new Map(assignments.map((assignment) => [assignment.window.index, assignment]));
 
   return {
@@ -134,16 +159,17 @@ export async function analyzeReport(
       region: meta.region.slug,
       zone: meta.zone?.name ?? null,
     },
-    fights: fights.map(({ id, encounterID, name, kill, difficulty, startTime, endTime }) => ({
-      id,
-      encounterID,
-      name,
-      kill,
-      difficulty,
-      startTime,
-      endTime,
+    fights: fights.map((fight) => ({
+      id: fight.id,
+      encounterID: fight.encounterID,
+      name: fight.name,
+      kill: fight.kill,
+      difficulty: fight.difficulty,
+      startTime: fight.startTime,
+      endTime: fight.endTime,
+      phases: fightPhases(fight),
     })),
-    windows: aggregated.map((row) => ({
+    windows: visible.map((row) => ({
       index: row.window.index,
       startTime: row.window.startTime,
       endTime: row.window.endTime,
@@ -151,15 +177,18 @@ export async function analyzeReport(
         key: entry.actor.key,
         name: entry.actor.name,
         ...(entry.actor.server ? { server: entry.actor.server } : {}),
+        ...(entry.actor.class ? { class: entry.actor.class } : {}),
         dps: Math.round(damagePerSecond(entry, row.window)),
         average: entry.average,
         samples: entry.count,
       })),
       assignments: (assignmentByIndex.get(row.window.index)?.slots ?? []).map((slot) => {
         const entry = row.entries.find((candidate) => candidate.actor.key === slot.key);
+        const className = entry?.actor.class ?? slot.class;
         return {
           key: slot.key,
           name: slot.name,
+          ...(className ? { class: className } : {}),
           dps: entry ? Math.round(damagePerSecond(entry, row.window)) : 0,
           priority: slot.priority,
         };
