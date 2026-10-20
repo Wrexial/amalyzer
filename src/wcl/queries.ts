@@ -49,6 +49,10 @@ export const REPORT_META_QUERY = /* GraphQL */ `
           }
         }
         masterData {
+          abilities {
+            id
+            name
+          }
           actors {
             id
             name
@@ -68,7 +72,7 @@ export type ReportMetaResponse = {
   reportData: {
     report:
       | (Omit<ReportMeta, 'actors' | 'players'> & {
-          masterData: { actors: ReportActor[] };
+          masterData: { actors: ReportActor[]; abilities: { id: number; name: string }[] };
           playerDetails: PlayerDetailsData | null;
         })
       | null;
@@ -406,6 +410,30 @@ export const BUFF_DAMAGE_TOTAL_QUERY = /* GraphQL */ `
           startTime: $startTime
           endTime: $endTime
           abilityID: $abilityID
+          sourceID: $sourceID
+          viewBy: Ability
+        )
+      }
+    }
+  }
+`;
+
+/** Whole-fight ability-level damage table for one actor (Aug). */
+export const FIGHT_ABILITY_TOTALS_QUERY = /* GraphQL */ `
+  query FightAbilityTotals(
+    $code: String!
+    $fightId: Int!
+    $startTime: Float!
+    $endTime: Float!
+    $sourceID: Int!
+  ) {
+    reportData {
+      report(code: $code) {
+        total: table(
+          dataType: DamageDone
+          fightIDs: [$fightId]
+          startTime: $startTime
+          endTime: $endTime
           sourceID: $sourceID
           viewBy: Ability
         )

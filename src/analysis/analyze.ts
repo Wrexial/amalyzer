@@ -6,9 +6,8 @@ import type { WCLClient, RateLimitInfo } from '../wcl/client.ts';
 import { DEFAULT_DAMAGE_FILTER } from '../wcl/filters.ts';
 import {
   buildActorLookup,
-  fetchBuffDamageTotal,
+  fetchAbilityDamageTotals,
   fetchDamageWindows,
-  fetchFightDamageTotals,
   fetchPrescienceBuffEvents,
   fetchPrescienceCasts,
   fetchShiftingSandsBuffEvents,
@@ -125,8 +124,6 @@ export type AnalyzeFight = Pick<
   phases: PhaseBoundary[];
   /** One entry per Prescience window (empty in fixed mode). */
   casts?: PrescienceCastInfo[];
-  /** WCL credited damage for each Aug Evoker in this fight (personal + all buffs). */
-  augDamage?: { key: string; name: string; total: number }[];
   /** Whole-fight WCL credit for the selected buff (Prescience/Shifting Sands). */
   buffCredit?: { key: string; name: string; total: number }[];
 };
@@ -195,6 +192,7 @@ export async function analyzeReport(
     options.filterExpression === undefined ? DEFAULT_DAMAGE_FILTER : options.filterExpression;
 
   const meta = await fetchReportMeta(client, code);
+  const abilityNames = new Map(meta.abilities.map((ability) => [ability.id, ability.name.toLowerCase()]));
   const augmenterId =
     options.augmenterId ??
     (options.augmenterName
@@ -219,10 +217,6 @@ export async function analyzeReport(
   const augmenters = [...lookup.values()].filter(
     (actor) => isAugmentationEvoker(actor) && (augmenterId == null || actor.id === augmenterId),
   );
-  const augDamageByFightId = new Map<
-    number,
-    { key: string; name: string; total: number }[]
-  >();
   const buffCreditByFightId = new Map<
     number,
     { key: string; name: string; total: number }[]
@@ -526,33 +520,33 @@ export async function analyzeReport(
 
     const castInfos = castInfoByFightId.get(fight.id) ?? [];
 
-    if (augmenters.length) {
-      const totals = await fetchFightDamageTotals(client, code, fight);
-      augDamageByFightId.set(
-        fight.id,
-        augmenters.map((actor) => ({
-          key: actor.key,
-          name: actor.name,
-          total: Math.round(totals.get(actor.id) ?? 0),
-        })),
-      );
+    if (augmenters.length && effectiveMode !== 'fixed') {
+      const buffCreditNames =
+        effectiveMode === 'shifting-sands' ? ['shifting sands'] : ['prescience', 'fate mirror'];
+      const buffCreditIds =
+        effectiveMode === 'shifting-sands'
+          ? [SHIFTING_SANDS_BUFF_ID]
+          : [PRESCIENCE_BUFF_ID, 412774, 413786];
 
-      if (effectiveMode !== 'fixed') {
-        const buffAbilityId =
-          effectiveMode === 'shifting-sands' ? SHIFTING_SANDS_BUFF_ID : PRESCIENCE_BUFF_ID;
-        buffCreditByFightId.set(
-          fight.id,
-          await Promise.all(
-            augmenters.map(async (actor) => ({
-              key: actor.key,
-              name: actor.name,
-              total: Math.round(
-                await fetchBuffDamageTotal(client, code, fight, buffAbilityId, actor.id),
-              ),
-            })),
-          ),
-        );
-      }
+      buffCreditByFightId.set(
+        fight.id,
+        await Promise.all(
+          augmenters.map(async (actor) => {
+            const entries = await fetchAbilityDamageTotals(client, code, fight, actor.id);
+            const total = entries
+              .filter((entry) => {
+                const name = abilityNames.get(entry.id);
+                return (
+                  (name != null && buffCreditNames.includes(name)) ||
+                  buffCreditIds.includes(entry.id)
+                );
+              })
+              .reduce((sum, entry) => sum + entry.total, 0);
+
+            return { key: actor.key, name: actor.name, total: Math.round(total) };
+          }),
+        ),
+      );
     }
 
     const damage = await fetchDamageWindows(client, code, fight, toReportTime(windows, fight.startTime), {
@@ -649,9 +643,6 @@ export async function analyzeReport(
       phases: fightPhases(fight),
       ...(effectiveMode !== 'fixed'
         ? { casts: castInfoByFightId.get(fight.id) ?? [] }
-        : {}),
-      ...(augDamageByFightId.has(fight.id)
-        ? { augDamage: augDamageByFightId.get(fight.id)! }
         : {}),
       ...(buffCreditByFightId.has(fight.id)
         ? { buffCredit: buffCreditByFightId.get(fight.id)! }

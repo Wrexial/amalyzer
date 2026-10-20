@@ -2,6 +2,7 @@ import type { WCLClient } from './client.ts';
 import {
   buildDamageWindowsQuery,
   BUFF_DAMAGE_TOTAL_QUERY,
+  FIGHT_ABILITY_TOTALS_QUERY,
   FIGHT_DAMAGE_TOTALS_QUERY,
   flattenPlayerDetails,
   isAnalyzableFight,
@@ -79,6 +80,7 @@ export async function fetchReportMeta(
     zone: report.zone,
     fights: report.fights,
     actors: report.masterData.actors,
+    abilities: report.masterData.abilities,
     players: flattenPlayerDetails(report.playerDetails),
   };
 }
@@ -254,6 +256,29 @@ export async function fetchFightDamageTotals(
     totals.set(Number(entry.id), entry.total ?? 0);
   }
   return totals;
+}
+
+/** Whole-fight ability totals for one actor (Aug). */
+export async function fetchAbilityDamageTotals(
+  client: WCLClient,
+  code: string,
+  fight: ReportFight,
+  sourceId: number,
+): Promise<{ id: number; total: number }[]> {
+  const data = await client.request<FightDamageTotalsResponse>(FIGHT_ABILITY_TOTALS_QUERY, {
+    code,
+    fightId: fight.id,
+    startTime: fight.startTime,
+    endTime: fight.endTime,
+    sourceID: sourceId,
+  });
+
+  const table = data.reportData.report?.total;
+  const parsed = table?.data ?? table;
+  return (parsed?.entries ?? []).map((entry) => ({
+    id: Number(entry.id),
+    total: entry.total ?? 0,
+  }));
 }
 
 /**

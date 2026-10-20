@@ -71,6 +71,8 @@ export type ReportMeta = {
   zone: { id: number; name: string } | null;
   fights: ReportFight[];
   actors: ReportActor[];
+  /** Ability id -> name for the report (used to group Prescience + Fate Mirror). */
+  abilities: { id: number; name: string }[];
   /** Same actors, but only the ones WCL classified as players for the report. */
   players: PlayerDetailsEntry[];
 };

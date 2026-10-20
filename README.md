@@ -228,19 +228,19 @@ support events for that exact target/application; targets with no reattributable
 damage (or WCL-excluded sources such as tank/healing attribution) simply have
 no line.
 
-The footer has two whole-fight WCL numbers per fight:
+The footer shows the whole-fight WCL credit per fight:
 
-- **`<buff> credited #fight`** — `table(dataType: DamageDone, abilityID=410089/413984,
-sourceID=<Aug>, viewBy: Ability)` for the whole fight. This is the same row
-Warcraft Logs shows for Prescience/Shifting Sands on the Aug's damage page.
-- **`Aug total #fight`** — the unfiltered whole-fight damage table for the Aug
-actor, i.e. personal damage plus Ebon Might, Prescience, Shifting Sands and any
-other reattribution.
+- **`<buff> credited #fight`** — the Aug's ability-level damage table for the
+fight. For Prescience, Warcraft Logs groups **Fate Mirror** echo damage into the
+Prescience row, so the total sums every entry named `Prescience` or
+`Fate Mirror` (falling back to ids 410089 / 412774 / 413786). Shifting Sands
+uses its `Shifting Sands` entry. This is the same number as the Aug's damage
+page row.
 
-The per-row `WCL credited` remains the target-specific event share (bucketed by
-`supportID` + application), so its sum is not guaranteed to equal the whole-fight
-buff row — WCL can include pet/delayed/Fate Mirror support that isn't a separate
-player application. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+The per-row `WCL credited` remains the target-specific support-event share
+(bucketed by `supportID` + application), so its sum need not equal the
+whole-fight row — WCL can include pet/delayed/Fate Mirror support that isn't a
+separate player application. Recasts get a yellow **extended** badge and a yellow row tint, and a red
 **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
@@ -309,6 +309,8 @@ The UI groups window rows by fight phase. WCL documents
 subtracts the fight start and feeds the fight-relative grid; the longest selected
 fight supplies the boundaries, since it is also the fight the window grid is cut
 from. When WCL omits the transition into phase 1, a boundary at 0 is synthesised.
+Each phase header is a collapsible button; collapse state is kept while
+toggling DPS/damage or filters.
 
 Player names are coloured with the WoW class colour and prefixed with the class
 icon from Wowhead's icon CDN (`classicon_<class>.jpg`). Icons fail soft: the

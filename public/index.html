@@ -223,6 +223,23 @@
       }
       tbody tr:first-child.phase-row td { padding-top: 8px; }
 
+      .phase-toggle {
+        all: unset;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        color: inherit;
+        font: inherit;
+        letter-spacing: inherit;
+        text-transform: inherit;
+        user-select: none;
+      }
+      .phase-toggle:hover { color: var(--accent-2); }
+      .phase-caret { display: inline-block; font-size: 10px; transition: transform 0.15s ease; }
+      tbody.phase-group.collapsed .phase-caret { transform: rotate(-90deg); }
+      tbody.phase-group.collapsed tr:not(.phase-row) { display: none; }
+
       tr.enemy-cast-row { background: color-mix(in srgb, var(--bad) 5%, transparent); }
       tr.extended-row { background: color-mix(in srgb, #e5cc80 7%, transparent); }
       tr.extended-row.enemy-cast-row {
@@ -468,6 +485,7 @@
         metric: 'average',
         windowMode: 'prescience-buff',
         fallbackByMode: { 'prescience-buff': 18_000, 'shifting-sands': 10_400 },
+        collapsedPhases: new Set(),
       };
       const STORAGE_KEY = 'amalyzer.wcl-credentials';
       const REPORTS_KEY = 'amalyzer.saved-reports';
@@ -894,8 +912,6 @@
         head.append(headRow);
         table.append(head);
 
-        const body = el('tbody');
-
         // Phases come from the longest selected fight, which is also the fight
         // the window grid is cut from.
         const reference = result.fights.reduce((best, fight) => {
@@ -912,6 +928,7 @@
         let theoreticalGain = 0;
         let theoreticalDamage = 0;
         let theoreticalWindows = 0;
+        let currentBody;
         let currentPhase;
         result.windows.forEach((window) => {
           // In Prescience mode the nth row is the nth cast, so use the reference
@@ -924,18 +941,43 @@
               : window.startTime;
           const phase = phases.length ? phaseAt(phases, phaseTime) : undefined;
           const phaseId = phase ? phase.id : undefined;
-          if (phaseId !== currentPhase) {
+          if (!currentBody || phaseId !== currentPhase) {
             currentPhase = phaseId;
-            if (phase) {
+            const groupBody = el('tbody', phases.length > 1 ? 'phase-group' : '');
+            currentBody = groupBody;
+            table.append(groupBody);
+
+            if (phase && phases.length > 1) {
               const phaseRow = el('tr', 'phase-row');
+              const cell = el('td');
+              cell.colSpan = 2;
+
+              const toggle = el('button', 'phase-toggle');
+              toggle.type = 'button';
+              toggle.setAttribute(
+                'aria-expanded',
+                String(!state.collapsedPhases.has(phase.id)),
+              );
+
+              const caret = el('span', 'phase-caret', '▾');
               const label =
                 phase.startTime > 0
                   ? `Phase ${phase.id} · from ${clock(phase.startTime)}`
                   : `Phase ${phase.id}`;
-              const cell = el('td', '', label);
-              cell.colSpan = 2;
+              toggle.append(caret, el('span', '', label));
+              toggle.addEventListener('click', () => {
+                if (state.collapsedPhases.has(phase.id)) state.collapsedPhases.delete(phase.id);
+                else state.collapsedPhases.add(phase.id);
+
+                const collapsed = state.collapsedPhases.has(phase.id);
+                groupBody.classList.toggle('collapsed', collapsed);
+                toggle.setAttribute('aria-expanded', String(!collapsed));
+              });
+
+              cell.append(toggle);
               phaseRow.append(cell);
-              body.append(phaseRow);
+              groupBody.append(phaseRow);
+              if (state.collapsedPhases.has(phase.id)) groupBody.classList.add('collapsed');
             }
           }
 
@@ -1108,10 +1150,9 @@
           }
 
           row.append(cell);
-          body.append(row);
+          currentBody.append(row);
         });
 
-        table.append(body);
         $('results').replaceChildren(table);
 
         const { limit, points } = result.rateLimit || {};
@@ -1124,7 +1165,7 @@
             '',
             result.windowMode === 'fixed'
               ? ''
-              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; WCL credited = this buff's support damage for the buffed target; <buff> credited = whole-fight WCL row for that buff; Aug total = personal + all buff attribution.`,
+              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; WCL credited = this buff's support damage for the buffed target; <buff> credited = the whole-fight WCL row (Prescience + Fate Mirror where applicable).`,
           ),
         ];
 
@@ -1135,15 +1176,6 @@
                 'span',
                 'aug-gain',
                 `${auraName} credited #${fight.id} → ${aug.name}: ${aug.total >= 0 ? '+' : ''}${fmt(aug.total)} damage (WCL)`,
-              ),
-            );
-          }
-          for (const aug of fight.augDamage ?? []) {
-            footItems.push(
-              el(
-                'span',
-                'aug-gain',
-                `Aug total #${fight.id} → ${aug.name}: ${aug.total >= 0 ? '+' : ''}${fmt(aug.total)} damage (personal + all buffs)`,
               ),
             );
           }
