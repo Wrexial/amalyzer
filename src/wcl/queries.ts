@@ -50,7 +50,7 @@ export const REPORT_META_QUERY = /* GraphQL */ `
         }
         masterData {
           abilities {
-            id
+            gameID
             name
           }
           actors {
@@ -72,7 +72,10 @@ export type ReportMetaResponse = {
   reportData: {
     report:
       | (Omit<ReportMeta, 'actors' | 'players'> & {
-          masterData: { actors: ReportActor[]; abilities: { id: number; name: string }[] };
+          masterData: {
+            actors: ReportActor[];
+            abilities: { gameID: number; name: string }[];
+          };
           playerDetails: PlayerDetailsData | null;
         })
       | null;

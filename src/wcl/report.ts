@@ -80,7 +80,10 @@ export async function fetchReportMeta(
     zone: report.zone,
     fights: report.fights,
     actors: report.masterData.actors,
-    abilities: report.masterData.abilities,
+    abilities: report.masterData.abilities.map((ability) => ({
+      id: Number(ability.gameID),
+      name: ability.name,
+    })),
     players: flattenPlayerDetails(report.playerDetails),
   };
 }
