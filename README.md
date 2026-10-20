@@ -298,7 +298,9 @@ Below the cards each Prescience row shows `Buffed <target>: X · Best unbuffed
 directly with the best alternative that was not buffed at that moment. Augmentation
 Evokers are excluded from the `Best unbuffed` candidate list. The comparison is
 only shown when that alternative actually out-damages the buffed target; if the
-buffed target is already ahead, only its value is shown.
+buffed target is already ahead, only its value is shown. A summary at the bottom
+aggregates those positive swaps: average DPS gain per Prescience window and the
+summed raw-damage gain across them.
 
 ## The "best logs" path
 

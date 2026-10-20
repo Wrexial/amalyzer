@@ -315,6 +315,7 @@
       }
       .compare .up { color: var(--good); }
       .compare .down { color: var(--bad); }
+      .foot .gain { color: var(--good); font-weight: 600; }
 
       .target-dps { font-variant-numeric: tabular-nums; color: var(--muted); }
 
@@ -762,6 +763,10 @@
           $('report-meta').textContent += ` · phases from #${reference.id}`;
         }
 
+        let theoreticalGain = 0;
+        let theoreticalDamage = 0;
+        let theoreticalWindows = 0;
+
         let currentPhase;
         result.windows.forEach((window) => {
           // In Prescience mode the nth row is the nth cast, so use the reference
@@ -899,6 +904,15 @@
               (entry) => !buffedKeys.has(entry.key) && !isAugEvoker(entry),
             );
 
+            if (targetEntry && bestUnbuffed) {
+              const deltaDps = bestUnbuffed.dps - targetEntry.dps;
+              if (deltaDps > 0) {
+                theoreticalGain += deltaDps;
+                theoreticalDamage += bestUnbuffed.average - targetEntry.average;
+                theoreticalWindows += 1;
+              }
+            }
+
             if (targetEntry) {
               const compare = el('div', 'compare');
               const unit = state.metric === 'average' ? 'damage' : 'DPS';
@@ -937,7 +951,7 @@
         $('results').replaceChildren(table);
 
         const { limit, points } = result.rateLimit || {};
-        $('foot').replaceChildren(
+        const footItems = [
           el('span', '', limit && points != null ? `Rate limit: ${points}/${limit} points` : ''),
           el('span', '', `Sorted by ${state.metric === 'average' ? 'damage' : 'DPS'} in each ${result.windowMode === 'fixed' ? 'window' : 'Prescience window'}; * = forced priority.`),
           el('span', '', 'Scroll a row to see every DPS character; faded cards are not picked.'),
@@ -948,7 +962,19 @@
               ? ''
               : 'Highlighted = Prescience target; buffed = already had Prescience at cast time; no target = cast was made on a hostile/NPC, buff credited to the aura recipient; extended = recast that extended an existing Prescience.',
           ),
-        );
+        ];
+
+        if (theoreticalWindows > 0) {
+          footItems.push(
+            el(
+              'span',
+              'gain',
+              `Theoretical best DPS gain: +${fmt(theoreticalGain / theoreticalWindows)} DPS avg per window · +${fmt(theoreticalDamage)} damage total (${theoreticalWindows} window${theoreticalWindows === 1 ? '' : 's'})`,
+            ),
+          );
+        }
+
+        $('foot').replaceChildren(...footItems);
       }
 
       showLoggedIn(Boolean(readCredentials()));
