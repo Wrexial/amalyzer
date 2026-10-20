@@ -415,11 +415,11 @@
           </div>
           <div class="view-controls hidden" id="view-controls">
             <div class="seg" role="group" aria-label="Metric">
-              <button type="button" data-metric="dps" class="active">DPS</button>
-              <button type="button" data-metric="average">Damage</button>
+              <button type="button" data-metric="dps">DPS</button>
+              <button type="button" data-metric="average" class="active">Damage</button>
             </div>
             <label class="check" for="hideAug">
-              <input id="hideAug" type="checkbox" /> Hide Augmentation Evokers
+              <input id="hideAug" type="checkbox" checked /> Hide Augmentation Evokers
             </label>
             <select id="buffFilter" aria-label="Buffed targets">
               <option value="all">All targets</option>
@@ -436,7 +436,7 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const state = { authenticated: false, fights: [], result: null, metric: 'dps' };
+      const state = { authenticated: false, fights: [], result: null, metric: 'average' };
       const STORAGE_KEY = 'amalyzer.wcl-credentials';
 
       function readCredentials() {
