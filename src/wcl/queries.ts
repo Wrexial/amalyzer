@@ -1,4 +1,11 @@
-import type { EncounterRankings, PlayerDetailsData, ReportActor, ReportFight, ReportMeta } from './types.ts';
+import type {
+  DamageTableEntry,
+  EncounterRankings,
+  PlayerDetailsData,
+  ReportActor,
+  ReportFight,
+  ReportMeta,
+} from './types.ts';
 
 /**
  * Report metadata + every fight + actor table, in one request.
@@ -90,6 +97,10 @@ export function isAnalyzableFight(fight: ReportFight): boolean {
  *
  * `startTime`/`endTime` are absolute report times, so the caller must pass
  * `fight.startTime + offset`.
+ *
+ * `table` is also a JSON scalar, so each alias is selected with no sub-selection.
+ * Its value is `{ data: { total, entries: [{ id, total }] } }` — see
+ * `DamageTableJson`.
  */
 export function buildDamageWindowsQuery(
   ranges: { startTime: number; endTime: number }[],
@@ -104,13 +115,7 @@ export function buildDamageWindowsQuery(
           endTime: ${Math.round(range.endTime)}
           dataType: DamageDone
           ${hasFilter ? 'filterExpression: $filter' : ''}
-        ) {
-          total
-          entries {
-            id
-            total
-          }
-        }`,
+        )`,
     )
     .join('\n');
 
@@ -133,10 +138,18 @@ export function buildDamageWindowsQuery(
   `;
 }
 
+/** `table(...)` JSON scalar value: `{ data: { total, entries } }`. */
+export type DamageTableJson = {
+  data?: { total?: number; entries?: DamageTableEntry[] };
+  /** Fallback for payloads that omit the `data` wrapper. */
+  total?: number;
+  entries?: DamageTableEntry[];
+};
+
 export type DamageWindowsResponse = {
   reportData: {
     report:
-      | (Record<string, { total: number; entries: { id: number; total: number }[] } | null> & {
+      | (Record<string, DamageTableJson | null> & {
           fights: ReportFight[];
         })
       | null;

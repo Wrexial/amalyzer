@@ -3,8 +3,8 @@
  * Docs: https://www.warcraftlogs.com/v2-api-docs/warcraft/
  *
  * Everything here is intentionally permissive (`unknown` / loose shapes) because
- * WCL returns JSON scalars for a few fields (notably `playerDetails.data` and
- * `encounterRankings`) and adds fields without notice.
+ * WCL returns JSON scalars for a few fields (notably `playerDetails`, `table`
+ * and `encounterRankings`) and adds fields without notice.
  */
 
 export type WCLCredentials = {

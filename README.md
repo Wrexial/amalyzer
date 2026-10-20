@@ -152,10 +152,7 @@ query DamageWindows($code: String!, $fightId: Int!, $filter: String) {
     report(code: $code) {
       fights(fightIDs: [$fightId]) { id startTime endTime }
       w0: table(fightIDs: [$fightId], startTime: 504000, endTime: 505999,
-                dataType: DamageDone, filterExpression: $filter) {
-        total
-        entries { id total }
-      }
+                dataType: DamageDone, filterExpression: $filter)
       # w1: … w19: …
     }
   }
@@ -164,6 +161,8 @@ query DamageWindows($code: String!, $fightId: Int!, $filter: String) {
 
 Notes that matter:
 
+- `table` is a **JSON scalar** too, so the alias has no sub-selection. Each value
+  comes back as `{ data: { total, entries: [{ id, total }] } }`.
 - `startTime`/`endTime` are **absolute report time**, i.e. `fight.startTime + offset`.
 - `endTime` is inclusive, hence `-1` on the window end.
 - `filterExpression` is applied server-side. `src/wcl/filters.ts` carries over the

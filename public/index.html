@@ -165,7 +165,7 @@
   </head>
   <body>
     <div class="wrap">
-      <h1>Amal<span>yzer</span></h1>
+      <h1>Ama<span>lyzer</span></h1>
       <p class="sub">Windowed damage from a Warcraft Logs report — who to buff, per 6-second window.</p>
 
       <div id="status"></div>
@@ -354,6 +354,7 @@
             const label = `#${fight.id} ${fight.kill ? 'kill' : Math.round(fight.fightPercentage ?? 0) + '%'} · ${fight.name} · ${secs(fight.durationMs)}s`;
             select.append(Object.assign(document.createElement('option'), { value: String(fight.id), textContent: label }));
           });
+          renderFightList(meta);
           setStatus(`${meta.fights.length} fight(s) loaded from "${meta.title}".`, 'ok');
         } catch (error) {
           setStatus(error.message, 'error');
@@ -361,6 +362,26 @@
           $('load').disabled = false;
         }
       });
+
+      /** Shows the loaded fights right away, before an analysis has run. */
+      function renderFightList(meta) {
+        $('result-panel').classList.remove('hidden');
+        $('report-title').textContent = meta.title;
+        $('report-meta').textContent =
+          `${meta.code} · ${meta.region}` +
+          (meta.zone ? ` · ${meta.zone}` : '') +
+          ` · ${meta.fights.length} fight(s)`;
+
+        const fights = $('fights');
+        fights.replaceChildren();
+        meta.fights.forEach((fight) => {
+          const label = `#${fight.id} ${fight.kill ? 'kill' : Math.round(fight.fightPercentage ?? 0) + '%'} · ${fight.name} · ${secs(fight.durationMs)}s`;
+          fights.append(el('span', 'chip', label));
+        });
+
+        $('results').replaceChildren();
+        $('foot').replaceChildren();
+      }
 
       $('analyze').addEventListener('click', async () => {
         const report = $('report').value.trim();

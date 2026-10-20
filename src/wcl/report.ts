@@ -107,9 +107,10 @@ export async function fetchDamageWindows(
 
     batch.forEach((window, index) => {
       const table = report[`w${index}`];
+      const parsed = table?.data ?? table;
       results.push({
         windowIndex: window.index,
-        entries: table?.entries ?? [],
+        entries: parsed?.entries ?? [],
       });
     });
   }
