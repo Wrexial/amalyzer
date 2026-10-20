@@ -220,12 +220,20 @@ Warcraft Logs records this as support damage events: the buff ability id
 `amount` = the credited damage. The analysis fetches those events for the fight
 and buckets them onto the matching buff application (`supportID` + `sourceID` +
 active interval), so a row means exactly "this player's buff damage from this
-Aug". The credited damage is summed per caster in the footer. Negative support
-events (known WCL quirk with stacked enemies) are kept as-is. Pet/guardian
-support events are resolved to their owning player before bucketing. Rows only
-show `WCL credited` when WCL actually emitted support events for that exact
-target/application; targets with no reattributable damage (or WCL-excluded
-sources such as tank/healing attribution) simply have no line. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+Aug". The credited damage is summed per caster in the footer as **Selected buff
+credit**. Negative support events (known WCL quirk with stacked enemies) are
+kept as-is. Pet/guardian support events are resolved to their owning player
+before bucketing. Rows only show `WCL credited` when WCL actually emitted
+support events for that exact target/application; targets with no reattributable
+damage (or WCL-excluded sources such as tank/healing attribution) simply have
+no line.
+
+The footer also shows **WCL total** per fight: a whole-fight `DamageDone` table
+with no filter, read from the Aug actor's entry. That is the same number as the
+Aug's damage-done page on Warcraft Logs — personal damage **plus** Ebon Might,
+Prescience, Shifting Sands and every other source of reattribution. It is much
+larger than `Selected buff credit`, which deliberately counts only the chosen
+buff's support for the rows on screen. Recasts get a yellow **extended** badge and a yellow row tint, and a red
 **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",

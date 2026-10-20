@@ -360,3 +360,30 @@ export const SUPPORT_DAMAGE_QUERY = /* GraphQL */ `
     }
   }
 `;
+
+/** Whole-fight damage table, used to show the Aug's total WCL credited damage. */
+export const FIGHT_DAMAGE_TOTALS_QUERY = /* GraphQL */ `
+  query FightDamageTotals(
+    $code: String!
+    $fightId: Int!
+    $startTime: Float!
+    $endTime: Float!
+  ) {
+    reportData {
+      report(code: $code) {
+        total: table(
+          dataType: DamageDone
+          fightIDs: [$fightId]
+          startTime: $startTime
+          endTime: $endTime
+        )
+      }
+    }
+  }
+`;
+
+export type FightDamageTotalsResponse = {
+  reportData: {
+    report: { total: DamageTableJson | null } | null;
+  };
+};

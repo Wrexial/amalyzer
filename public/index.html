@@ -1137,7 +1137,7 @@
             '',
             result.windowMode === 'fixed'
               ? ''
-              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; WCL credited = buff damage reattributed to the Aug by Warcraft Logs (shown only when WCL emitted support for that target/window).`,
+              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; WCL credited = this buff's support damage for the buffed target; WCL total = the Aug's full credited damage for the fight (personal + all buff attribution).`,
           ),
         ];
 
@@ -1147,9 +1147,21 @@
             el(
               'span',
               'aug-gain',
-              `WCL reattributed → ${total.name}: ${total.damage >= 0 ? '+' : ''}${fmt(total.damage)} damage · ${fmt(total.dps / total.windows)} DPS avg per window`,
+              `Selected buff credit → ${total.name}: ${total.damage >= 0 ? '+' : ''}${fmt(total.damage)} damage · ${fmt(total.dps / total.windows)} DPS avg per window`,
             ),
           );
+        }
+
+        for (const fight of result.fights) {
+          for (const aug of fight.augDamage ?? []) {
+            footItems.push(
+              el(
+                'span',
+                'aug-gain',
+                `WCL total #${fight.id} → ${aug.name}: ${aug.total >= 0 ? '+' : ''}${fmt(aug.total)} damage`,
+              ),
+            );
+          }
         }
 
         if (theoreticalWindows > 0) {

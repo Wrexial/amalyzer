@@ -1,6 +1,7 @@
 import type { WCLClient } from './client.ts';
 import {
   buildDamageWindowsQuery,
+  FIGHT_DAMAGE_TOTALS_QUERY,
   flattenPlayerDetails,
   isAnalyzableFight,
   PRESCIENCE_BUFF_ID,
@@ -12,6 +13,7 @@ import {
   SUPPORT_DAMAGE_QUERY,
   REPORT_META_QUERY,
   type DamageWindowsResponse,
+  type FightDamageTotalsResponse,
   type PrescienceBuffsResponse,
   type PrescienceCastsResponse,
   type ReportMetaResponse,
@@ -223,6 +225,32 @@ async function fetchBuffEvents(
   }
 
   return buffs;
+}
+
+/**
+ * Fetches the whole-fight damage table and maps actor id -> total. This is the
+ * same credited damage WCL's damage-done page shows for the Aug (personal plus
+ * all buff attribution).
+ */
+export async function fetchFightDamageTotals(
+  client: WCLClient,
+  code: string,
+  fight: ReportFight,
+): Promise<Map<number, number>> {
+  const data = await client.request<FightDamageTotalsResponse>(FIGHT_DAMAGE_TOTALS_QUERY, {
+    code,
+    fightId: fight.id,
+    startTime: fight.startTime,
+    endTime: fight.endTime,
+  });
+
+  const table = data.reportData.report?.total;
+  const parsed = table?.data ?? table;
+  const totals = new Map<number, number>();
+  for (const entry of parsed?.entries ?? []) {
+    totals.set(Number(entry.id), entry.total ?? 0);
+  }
+  return totals;
 }
 
 /**

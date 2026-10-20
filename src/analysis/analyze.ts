@@ -7,6 +7,7 @@ import { DEFAULT_DAMAGE_FILTER } from '../wcl/filters.ts';
 import {
   buildActorLookup,
   fetchDamageWindows,
+  fetchFightDamageTotals,
   fetchPrescienceBuffEvents,
   fetchPrescienceCasts,
   fetchShiftingSandsBuffEvents,
@@ -123,6 +124,8 @@ export type AnalyzeFight = Pick<
   phases: PhaseBoundary[];
   /** One entry per Prescience window (empty in fixed mode). */
   casts?: PrescienceCastInfo[];
+  /** WCL credited damage for each Aug Evoker in this fight (personal + all buffs). */
+  augDamage?: { key: string; name: string; total: number }[];
 };
 
 export type AnalyzeResult = {
@@ -210,6 +213,13 @@ export async function analyzeReport(
   });
 
   const lookup = buildActorLookup(meta);
+  const augmenters = [...lookup.values()].filter(
+    (actor) => isAugmentationEvoker(actor) && (augmenterId == null || actor.id === augmenterId),
+  );
+  const augDamageByFightId = new Map<
+    number,
+    { key: string; name: string; total: number }[]
+  >();
 
   // WCL can attribute pet/guardian support damage to the pet's actor id. Resolve
   // it to the owning player so it matches the buff application's target.
@@ -509,6 +519,18 @@ export async function analyzeReport(
 
     const castInfos = castInfoByFightId.get(fight.id) ?? [];
 
+    if (augmenters.length) {
+      const totals = await fetchFightDamageTotals(client, code, fight);
+      augDamageByFightId.set(
+        fight.id,
+        augmenters.map((actor) => ({
+          key: actor.key,
+          name: actor.name,
+          total: Math.round(totals.get(actor.id) ?? 0),
+        })),
+      );
+    }
+
     const damage = await fetchDamageWindows(client, code, fight, toReportTime(windows, fight.startTime), {
       ...(filterExpression ? { filterExpression } : {}),
     });
@@ -603,6 +625,9 @@ export async function analyzeReport(
       phases: fightPhases(fight),
       ...(effectiveMode !== 'fixed'
         ? { casts: castInfoByFightId.get(fight.id) ?? [] }
+        : {}),
+      ...(augDamageByFightId.has(fight.id)
+        ? { augDamage: augDamageByFightId.get(fight.id)! }
         : {}),
     })),
     windows: visible.map((row) => ({
