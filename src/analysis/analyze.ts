@@ -25,8 +25,8 @@ export type AnalyzeOptions = {
   fight?: string;
   encounterID?: number;
   /**
-   * `prescience` (default): one window per cast, ending at the next cast.
-   * `prescience-buff`: one window per cast, lasting the buff duration.
+   * `prescience-buff` (default): one window per cast, lasting the buff duration.
+   * `prescience`: one window per cast, ending at the next cast.
    * `fixed`: the old clock-based grid.
    */
   windowMode?: WindowMode;
@@ -150,9 +150,9 @@ export async function analyzeReport(
   if (!code) throw new Error('Could not find a report code in that input');
 
   const windowMode: WindowMode =
-    options.windowMode === 'fixed' || options.windowMode === 'prescience-buff'
+    options.windowMode === 'fixed' || options.windowMode === 'prescience'
       ? options.windowMode
-      : 'prescience';
+      : 'prescience-buff';
   const prescienceDurationMs = options.prescienceDurationMs ?? 18_000;
   const windowMs = options.windowMs ?? 27_000;
   const offsetMs = options.offsetMs ?? 4000;

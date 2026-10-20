@@ -338,8 +338,8 @@
           <div>
             <label for="windowMode">Window source</label>
             <select id="windowMode">
+              <option value="prescience-buff" selected>Prescience buff window</option>
               <option value="prescience">Prescience casts (to next cast)</option>
-              <option value="prescience-buff">Prescience buff window</option>
               <option value="fixed">Fixed interval</option>
             </select>
           </div>
@@ -367,9 +367,9 @@
           <button id="logout" class="ghost" style="margin-left: auto">Disconnect</button>
         </div>
         <p class="hint">
-          <code>Load fights</code> fills the fight list from the report. By default each window runs
-          from one Prescience cast to the next, so the target list answers "who should get the next
-          Prescience". A per-cast buff-duration window and the old fixed interval are also
+          <code>Load fights</code> fills the fight list from the report. By default each window is a
+          Prescience cast plus its buff duration (18s), so the damage shown is what happened while
+          that person was buffed. Cast-to-next-cast intervals and the old fixed interval are also
           available. Filtering uses the default ability filter (drops non-scaling trinket damage);
           leave it alone unless you know why. After analysing you can switch between DPS and raw
           damage, hide Augmentation Evokers, or compare buffed vs unbuffed targets without
@@ -766,12 +766,19 @@
 
           const row = el('tr');
           const castInfo = reference?.casts?.[window.index];
-          const windowText =
-            result.windowMode !== 'fixed'
-              ? castInfo
-                ? `#${window.index + 1} · ${clock(castInfo.startTime)}`
-                : `#${window.index + 1}`
-              : `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
+          let windowText;
+          if (result.windowMode === 'fixed') {
+            windowText = `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
+          } else if (!castInfo) {
+            windowText = `#${window.index + 1}`;
+          } else if (result.windowMode === 'prescience-buff') {
+            const buffMs = result.prescienceDurationMs ?? 18_000;
+            const fightMs = reference.endTime - reference.startTime;
+            const end = Math.min(castInfo.startTime + buffMs, fightMs);
+            windowText = `#${window.index + 1} · ${clock(castInfo.startTime)}–${clock(end)}`;
+          } else {
+            windowText = `#${window.index + 1} · ${clock(castInfo.startTime)}`;
+          }
           const timeCell = el('td', 'time', windowText);
           if (window.castTarget) timeCell.title = `Prescience cast on ${window.castTarget.name}`;
           row.append(timeCell);
@@ -843,20 +850,29 @@
 
             if (targetEntry) {
               const compare = el('div', 'compare');
+              const unit = state.metric === 'average' ? 'damage' : 'DPS';
               compare.append(
-                el('span', '', `Buffed ${targetEntry.name}: ${fmt(metricValue(targetEntry))}`),
+                el(
+                  'span',
+                  '',
+                  `Buffed ${targetEntry.name}: ${fmt(metricValue(targetEntry))} ${unit}`,
+                ),
               );
               if (bestUnbuffed) {
                 compare.append(
                   el(
                     'span',
                     '',
-                    `Best unbuffed ${bestUnbuffed.name}: ${fmt(metricValue(bestUnbuffed))}`,
+                    `Best unbuffed ${bestUnbuffed.name}: ${fmt(metricValue(bestUnbuffed))} ${unit}`,
                   ),
                 );
                 const delta = metricValue(targetEntry) - metricValue(bestUnbuffed);
                 compare.append(
-                  el('span', delta >= 0 ? 'up' : 'down', `${delta >= 0 ? '+' : ''}${fmt(delta)}`),
+                  el(
+                    'span',
+                    delta >= 0 ? 'up' : 'down',
+                    `${delta >= 0 ? '+' : ''}${fmt(delta)} ${unit}`,
+                  ),
                 );
               }
               cell.append(compare);

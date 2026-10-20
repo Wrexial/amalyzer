@@ -178,14 +178,19 @@ Notes that matter:
 ## Damage windows
 
 By default windows are not fixed intervals: each **Prescience cast** opens a
-window that ends at the next cast, and the last one ends with the fight.
+window that lasts the buff duration (18s), so the damage shown is what happened
+while that person was buffed.
 
 ```
-Prescience cast @ 0:04  -> [0:04, 0:10)
-Prescience cast @ 0:10  -> [0:10, 0:16)
-Prescience cast @ 0:16  -> [0:16, 0:34)   (last cast, runs to fight end)
+Prescience cast @ 0:04  -> [0:04, 0:22)
+Prescience cast @ 0:10  -> [0:10, 0:28)
+Prescience cast @ 0:16  -> [0:16, 0:34)
 …
 ```
+
+Casts are ~6s apart while the buff lasts 18s, so **buff windows overlap**. Each
+row is still an independent "what did the raid do while this cast's buff was up"
+measurement. The window is clipped to the fight end.
 
 How it is built:
 
@@ -194,26 +199,27 @@ How it is built:
    it applies is 410089. The id is filtered server-side.
    `fetchPrescienceBuffEvents()` also fetches the aura's `applybuff` /
    `refreshbuff` events, and `matchPrescienceRecipients()` pairs each cast with
-   the nearest one. This matters because a cast event often records the enemy
-   the Evoker had selected rather than the ally the game auto-picked: the buff
-   event is the authoritative recipient.
-2. `buildPrescienceIntervals()` converts report-relative event timestamps to
-   fight-relative windows and uses the **cast ordinal** as the window index.
-   Window N is therefore the Nth Prescience of every pull, which is what lines
-   up across pulls.
+   the nearest one from the same caster. This matters because a cast event often
+   records the enemy the Evoker had selected rather than the ally the game
+   auto-picked: the buff event is the authoritative recipient for those casts.
+   Casts whose raw target is already a player keep that target.
+2. `buildPrescienceWindows()` converts report-relative event timestamps to
+   fight-relative windows, clips the last one to the fight end, and uses the
+   **cast ordinal** as the window index. Window N is therefore the Nth
+   Prescience of every pull, which is what lines up across pulls.
 3. There is no start offset: the first window begins at the first cast.
 
-Two other modes are available via `windowMode`:
+Other modes are available via `windowMode`:
 
-- `prescience-buff` — each cast opens a window lasting the buff duration
-  (`prescienceDurationMs`, default 18 000 ms, UI field /
-  `--prescience-duration`). Buffs last longer than the ~6s cast cadence, so
-  these windows overlap. Use this to ask "what did the raid do while the buff
-  was up" instead of "what happened between casts".
+- `prescience` — each window runs from one cast to the next, with the last one
+  running to the end of the fight. Use this for "what happened between casts".
 - `fixed` — the old clock grid: 27 000 ms windows, 4000 ms offset, anchored to
   fight start. `buildWindows()` still reproduces the original
   `generateTimeRanges()` exactly at `sizeMs: 6000`. Pass
   `--window-mode fixed` (or just `--window`/`--offset`) to force it.
+
+`prescienceDurationMs` (default 18 000 ms) is the buff length, editable in the UI
+and via `--prescience-duration`. It has changed across patches.
 
 If no casts are found in any selected fight (no Augmentation Evoker was logged),
 the analysis falls back to the fixed grid and reports `windowModeFallback`.

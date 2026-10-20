@@ -115,7 +115,7 @@ async function commandDamage(client: WCLClient, input: string, flags: Flags) {
       ? requestedMode
       : flags.window || flags.offset
         ? 'fixed'
-        : 'prescience';
+        : 'prescience-buff';
 
   const result = await analyzeReport(client, input, {
     ...(flags.fight && flags.fight !== true ? { fight: String(flags.fight) } : {}),
