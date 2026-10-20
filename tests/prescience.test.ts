@@ -128,3 +128,16 @@ test("does not pair a cast with another caster's application", () => {
 
   assert.equal(matched[0]!.recipientID, undefined);
 });
+
+test("prefers the application on the cast's own target", () => {
+  const matched = matchPrescienceRecipients(
+    [{ timestamp: 1000, targetID: 2 }],
+    [
+      { timestamp: 1000, endTimestamp: 5000, targetID: 3 },
+      { timestamp: 1020, endTimestamp: 19_020, targetID: 2 },
+    ],
+  );
+
+  assert.equal(matched[0]!.recipientID, 2);
+  assert.equal(matched[0]!.applicationEndTimestamp, 19_020);
+});

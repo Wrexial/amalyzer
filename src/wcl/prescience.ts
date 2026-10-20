@@ -153,7 +153,10 @@ export function matchPrescienceRecipients(
         const delta = application.timestamp - cast.timestamp;
         if (delta < -toleranceMs || delta > toleranceMs) return;
 
-        const distance = Math.abs(delta);
+        // Prefer the application on the cast's own target; this keeps an
+        // unrelated buff event on another player from winning on timestamp.
+        const sameTarget = cast.targetID != null && application.targetID === cast.targetID;
+        const distance = Math.abs(delta) + (sameTarget ? 0 : 1000);
         if (distance < bestDistance) {
           bestDistance = distance;
           bestIndex = index;
