@@ -6,7 +6,7 @@ import type { WCLClient, RateLimitInfo } from '../wcl/client.ts';
 import { DEFAULT_DAMAGE_FILTER } from '../wcl/filters.ts';
 import {
   buildActorLookup,
-  fetchAbilityDamageTotals,
+  fetchBuffDamageTotal,
   fetchDamageWindows,
   fetchPrescienceBuffEvents,
   fetchPrescienceCasts,
@@ -192,7 +192,6 @@ export async function analyzeReport(
     options.filterExpression === undefined ? DEFAULT_DAMAGE_FILTER : options.filterExpression;
 
   const meta = await fetchReportMeta(client, code);
-  const abilityNames = new Map(meta.abilities.map((ability) => [ability.id, ability.name.toLowerCase()]));
   const augmenterId =
     options.augmenterId ??
     (options.augmenterName
@@ -521,27 +520,30 @@ export async function analyzeReport(
     const castInfos = castInfoByFightId.get(fight.id) ?? [];
 
     if (augmenters.length && effectiveMode !== 'fixed') {
-      const buffCreditNames =
-        effectiveMode === 'shifting-sands' ? ['shifting sands'] : ['prescience', 'fate mirror'];
-      const buffCreditIds =
-        effectiveMode === 'shifting-sands'
-          ? [SHIFTING_SANDS_BUFF_ID]
-          : [PRESCIENCE_BUFF_ID, 412774, 413786];
-
       buffCreditByFightId.set(
         fight.id,
         await Promise.all(
           augmenters.map(async (actor) => {
-            const entries = await fetchAbilityDamageTotals(client, code, fight, actor.id);
-            const total = entries
-              .filter((entry) => {
-                const name = abilityNames.get(entry.id);
-                return (
-                  (name != null && buffCreditNames.includes(name)) ||
-                  buffCreditIds.includes(entry.id)
-                );
-              })
-              .reduce((sum, entry) => sum + entry.total, 0);
+            let total: number;
+            if (effectiveMode === 'shifting-sands') {
+              total = await fetchBuffDamageTotal(
+                client,
+                code,
+                fight,
+                SHIFTING_SANDS_BUFF_ID,
+                actor.id,
+              );
+            } else {
+              // WCL groups Fate Mirror into the Prescience row. Query it as a
+              // separate ability total; take the max in case both ids represent
+              // the same support events.
+              const [prescience, fateTalent, fateBuff] = await Promise.all([
+                fetchBuffDamageTotal(client, code, fight, PRESCIENCE_BUFF_ID, actor.id),
+                fetchBuffDamageTotal(client, code, fight, 412774, actor.id),
+                fetchBuffDamageTotal(client, code, fight, 413786, actor.id),
+              ]);
+              total = prescience + Math.max(fateTalent, fateBuff);
+            }
 
             return { key: actor.key, name: actor.name, total: Math.round(total) };
           }),
