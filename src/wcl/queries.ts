@@ -346,7 +346,6 @@ export const SUPPORT_DAMAGE_QUERY = /* GraphQL */ `
     $fightId: Int!
     $startTime: Float!
     $endTime: Float!
-    $abilityID: Float!
     $sourceID: Int
   ) {
     reportData {
@@ -356,7 +355,6 @@ export const SUPPORT_DAMAGE_QUERY = /* GraphQL */ `
           fightIDs: [$fightId]
           startTime: $startTime
           endTime: $endTime
-          abilityID: $abilityID
           sourceID: $sourceID
           limit: 10000
         ) {

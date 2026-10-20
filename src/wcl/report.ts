@@ -318,7 +318,6 @@ export async function fetchSupportDamageEvents(
   client: WCLClient,
   code: string,
   fight: ReportFight,
-  abilityId: number,
   sourceId?: number,
 ): Promise<SupportDamageEvent[]> {
   const events: SupportDamageEvent[] = [];
@@ -330,7 +329,6 @@ export async function fetchSupportDamageEvents(
       fightId: fight.id,
       startTime,
       endTime: fight.endTime,
-      abilityID: abilityId,
       ...(sourceId != null ? { sourceID: sourceId } : {}),
     });
 
@@ -347,6 +345,7 @@ export async function fetchSupportDamageEvents(
         timestamp: event.timestamp,
         supportID: event.supportID,
         amount: event.amount,
+        ...(event.abilityGameID != null ? { abilityGameID: Number(event.abilityGameID) } : {}),
         ...(event.sourceID ? { sourceID: event.sourceID } : {}),
       });
     });

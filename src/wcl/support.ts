@@ -4,6 +4,8 @@ import type { PrescienceApplication } from './prescience.ts';
 export type SupportDamageEvent = {
   /** Report-relative timestamp. */
   timestamp: number;
+  /** Ability id of the support event (buff/fate mirror/…). */
+  abilityGameID?: number;
   /** Aug Evoker actor id. */
   sourceID?: number;
   /** Actor id of the buffed player whose damage was reattributed. */

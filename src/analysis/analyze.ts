@@ -6,7 +6,6 @@ import type { WCLClient, RateLimitInfo } from '../wcl/client.ts';
 import { DEFAULT_DAMAGE_FILTER } from '../wcl/filters.ts';
 import {
   buildActorLookup,
-  fetchBuffDamageTotal,
   fetchDamageWindows,
   fetchPrescienceBuffEvents,
   fetchPrescienceCasts,
@@ -220,6 +219,26 @@ export async function analyzeReport(
     number,
     { key: string; name: string; total: number }[]
   >();
+  const supportTotalsByFightId = new Map<number, Map<number, number>>();
+
+  const abilityNames = new Map(
+    meta.abilities.map((ability) => [ability.id, ability.name.toLowerCase()]),
+  );
+  const buffSupportNames =
+    windowMode === 'shifting-sands' ? ['shifting sands'] : ['prescience', 'fate mirror'];
+  const buffSupportIds =
+    windowMode === 'shifting-sands'
+      ? [SHIFTING_SANDS_BUFF_ID]
+      : [PRESCIENCE_BUFF_ID, 412774, 413786];
+
+  const filterBuffSupportEvents = (events: SupportDamageEvent[]): SupportDamageEvent[] =>
+    events.filter((event) => {
+      const name = event.abilityGameID != null ? abilityNames.get(event.abilityGameID) : undefined;
+      return (
+        (name != null && buffSupportNames.some((buffName) => name.includes(buffName))) ||
+        (event.abilityGameID != null && buffSupportIds.includes(event.abilityGameID))
+      );
+    });
 
   // WCL can attribute pet/guardian support damage to the pet's actor id. Resolve
   // it to the owning player so it matches the buff application's target.
@@ -238,11 +257,33 @@ export async function analyzeReport(
   const castsByFightId = new Map<number, TimeWindow[]>();
   const castInfoByFightId = new Map<number, PrescienceCastInfo[]>();
   const buffedByFightId = new Map<number, { key: string; name: string }[][]>();
-  const eventSupportTotalByFightId = new Map<number, number>();
   let castsFound = 0;
 
   if (windowMode !== 'fixed') {
     for (const fight of fights) {
+      const supportEvents = filterBuffSupportEvents(
+        resolveSupportEvents(
+          augmenters.length
+            ? (
+                await Promise.all(
+                  augmenters.map((actor) =>
+                    fetchSupportDamageEvents(client, code, fight, actor.id),
+                  ),
+                )
+              ).flat()
+            : [],
+        ),
+      );
+      const supportTotalsBySource = new Map<number, number>();
+      for (const event of supportEvents) {
+        if (event.sourceID == null) continue;
+        supportTotalsBySource.set(
+          event.sourceID,
+          (supportTotalsBySource.get(event.sourceID) ?? 0) + event.amount,
+        );
+      }
+      supportTotalsByFightId.set(fight.id, supportTotalsBySource);
+
       if (windowMode === 'shifting-sands') {
         const duration = fight.endTime - fight.startTime;
         const buffEvents = await fetchShiftingSandsBuffEvents(client, code, fight);
@@ -253,23 +294,10 @@ export async function analyzeReport(
           fight.endTime,
           shiftingSandsDurationMs,
         );
-        const supportEvents = resolveSupportEvents(
-          await fetchSupportDamageEvents(
-            client,
-            code,
-            fight,
-            SHIFTING_SANDS_BUFF_ID,
-            augmenterId,
-          ),
-        );
         const supportByStart = sumSupportByApplication(
           applications,
           supportEvents,
           fight.startTime,
-        );
-        eventSupportTotalByFightId.set(
-          fight.id,
-          supportEvents.reduce((sum, event) => sum + event.amount, 0),
         );
         const windowApplications = augmenterId
           ? applications.filter((application) => application.sourceID === augmenterId)
@@ -380,17 +408,10 @@ export async function analyzeReport(
         fight.endTime,
         prescienceDurationMs,
       );
-      const supportEvents = resolveSupportEvents(
-        await fetchSupportDamageEvents(client, code, fight, PRESCIENCE_BUFF_ID, augmenterId),
-      );
       const supportByStart = sumSupportByApplication(
         applications,
         supportEvents,
         fight.startTime,
-      );
-      eventSupportTotalByFightId.set(
-        fight.id,
-        supportEvents.reduce((sum, event) => sum + event.amount, 0),
       );
       const casts = matchPrescienceRecipients(
         augmenterId ? rawCasts.filter((cast) => cast.sourceID === augmenterId) : rawCasts,
@@ -531,36 +552,14 @@ export async function analyzeReport(
     const castInfos = castInfoByFightId.get(fight.id) ?? [];
 
     if (augmenters.length && effectiveMode !== 'fixed') {
+      const totals = supportTotalsByFightId.get(fight.id);
       buffCreditByFightId.set(
         fight.id,
-        await Promise.all(
-          augmenters.map(async (actor) => {
-            let total: number;
-            if (effectiveMode === 'shifting-sands') {
-              total = await fetchBuffDamageTotal(
-                client,
-                code,
-                fight,
-                SHIFTING_SANDS_BUFF_ID,
-                actor.id,
-              );
-            } else {
-              // WCL groups Fate Mirror into the Prescience row. Query it as a
-              // separate ability total; take the max in case both ids represent
-              // the same support events.
-              const [prescience, fateTalent, fateBuff] = await Promise.all([
-                fetchBuffDamageTotal(client, code, fight, PRESCIENCE_BUFF_ID, actor.id),
-                fetchBuffDamageTotal(client, code, fight, 412774, actor.id),
-                fetchBuffDamageTotal(client, code, fight, 413786, actor.id),
-              ]);
-              total = prescience + Math.max(fateTalent, fateBuff);
-            }
-
-            if (!total) total = eventSupportTotalByFightId.get(fight.id) ?? 0;
-
-            return { key: actor.key, name: actor.name, total: Math.round(total) };
-          }),
-        ),
+        augmenters.map((actor) => ({
+          key: actor.key,
+          name: actor.name,
+          total: Math.round(totals?.get(actor.id) ?? 0),
+        })),
       );
     }
 
