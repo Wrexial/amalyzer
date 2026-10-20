@@ -3,8 +3,11 @@ import {
   buildDamageWindowsQuery,
   flattenPlayerDetails,
   isAnalyzableFight,
+  PRESCIENCE_CAST_ID,
+  PRESCIENCE_CASTS_QUERY,
   REPORT_META_QUERY,
   type DamageWindowsResponse,
+  type PrescienceCastsResponse,
   type ReportMetaResponse,
 } from './queries.ts';
 import type {
@@ -116,6 +119,44 @@ export async function fetchDamageWindows(
   }
 
   return results;
+}
+
+/**
+ * Report-relative timestamps of every Prescience cast in one fight.
+ *
+ * `abilityID` filters server-side, so this is one small page; the loop is only
+ * there for reports with an absurd number of casts.
+ */
+export async function fetchPrescienceCasts(
+  client: WCLClient,
+  code: string,
+  fight: ReportFight,
+): Promise<number[]> {
+  const timestamps: number[] = [];
+  let startTime = fight.startTime;
+
+  for (let page = 0; page < 10; page += 1) {
+    const data = await client.request<PrescienceCastsResponse>(PRESCIENCE_CASTS_QUERY, {
+      code,
+      fightId: fight.id,
+      startTime,
+      endTime: fight.endTime,
+    });
+
+    const events = data.reportData.report?.events;
+    if (!events?.data) break;
+
+    events.data.forEach((event) => {
+      if (event.abilityGameID != null && event.abilityGameID !== PRESCIENCE_CAST_ID) return;
+      if (event.type && event.type !== 'cast') return;
+      if (typeof event.timestamp === 'number') timestamps.push(event.timestamp);
+    });
+
+    if (events.nextPageTimestamp == null || events.nextPageTimestamp <= startTime) break;
+    startTime = events.nextPageTimestamp;
+  }
+
+  return timestamps;
 }
 
 export type ActorLookup = {

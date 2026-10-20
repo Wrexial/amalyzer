@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildWindows, toReportTime, windowDurationMs } from '../src/analysis/windows.ts';
+import {
+  buildPrescienceIntervals,
+  buildPrescienceWindows,
+  buildWindows,
+  toReportTime,
+  windowDurationMs,
+} from '../src/analysis/windows.ts';
 
 test('windows match Augmentator3000 generateTimeRanges at 6s', () => {
   // Reimplementation of the original loop:
@@ -35,6 +41,41 @@ test('maxWindows caps the grid without shifting it', () => {
     windows.map((window) => window.startTime),
     [4000, 27_000],
   );
+});
+
+test('prescience intervals run from each cast to the next, last to fight end', () => {
+  const windows = buildPrescienceIntervals([100_000, 106_000, 118_000], 100_000, 60_000);
+
+  assert.deepEqual(windows, [
+    { index: 0, startTime: 0, endTime: 5_999 },
+    { index: 1, startTime: 6_000, endTime: 17_999 },
+    { index: 2, startTime: 18_000, endTime: 59_999 },
+  ]);
+});
+
+test('prescience intervals dedupe and ignore out-of-fight casts', () => {
+  const windows = buildPrescienceIntervals([160_000, 100_000, 100_000], 100_000, 20_000);
+
+  assert.deepEqual(windows, [{ index: 0, startTime: 0, endTime: 19_999 }]);
+});
+
+test('prescience windows start at each cast and last the buff duration', () => {
+  const windows = buildPrescienceWindows([100_000, 106_000, 118_000], 100_000, 60_000, 18_000);
+
+  assert.deepEqual(windows, [
+    { index: 0, startTime: 0, endTime: 17_999 },
+    { index: 1, startTime: 6_000, endTime: 23_999 },
+    { index: 2, startTime: 18_000, endTime: 35_999 },
+  ]);
+});
+
+test('prescience windows are sorted, deduplicated and clipped to the fight', () => {
+  const windows = buildPrescienceWindows([112_000, 100_000, 100_000], 100_000, 20_000, 18_000);
+
+  assert.deepEqual(windows, [
+    { index: 0, startTime: 0, endTime: 17_999 },
+    { index: 1, startTime: 12_000, endTime: 19_999 },
+  ]);
 });
 
 test('toReportTime shifts into report time', () => {

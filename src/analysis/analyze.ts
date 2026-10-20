@@ -1,23 +1,35 @@
 import { damagePerSecond, aggregateDamage } from './aggregate.ts';
 import { fightPhases, type PhaseBoundary } from './phases.ts';
 import { buildAssignments } from './rank.ts';
-import { buildWindows, toReportTime } from './windows.ts';
+import { buildPrescienceIntervals, buildPrescienceWindows, buildWindows, toReportTime } from './windows.ts';
 import type { WCLClient, RateLimitInfo } from '../wcl/client.ts';
 import { DEFAULT_DAMAGE_FILTER } from '../wcl/filters.ts';
 import {
   buildActorLookup,
   fetchDamageWindows,
+  fetchPrescienceCasts,
   fetchReportMeta,
   isAugmentationEvoker,
   parseReportInput,
   selectFights,
 } from '../wcl/report.ts';
-import type { ReportFight } from '../wcl/types.ts';
+import type { ReportFight, TimeWindow, WindowDamage } from '../wcl/types.ts';
+
+/** How the analysis slices a fight into damage windows. */
+export type WindowMode = 'prescience' | 'prescience-buff' | 'fixed';
 
 export type AnalyzeOptions = {
   /** Fight id, comma-separated ids, `last`, or `all`. Defaults to the last kill. */
   fight?: string;
   encounterID?: number;
+  /**
+   * `prescience` (default): one window per cast, ending at the next cast.
+   * `prescience-buff`: one window per cast, lasting the buff duration.
+   * `fixed`: the old clock-based grid.
+   */
+  windowMode?: WindowMode;
+  /** Length of the Prescience buff in ms, only used by `prescience-buff`. Default 18000. */
+  prescienceDurationMs?: number;
   windowMs?: number;
   offsetMs?: number;
   slots?: number;
@@ -66,10 +78,17 @@ export type AnalyzeFight = Pick<
 > & {
   /** Fight-relative phase boundaries parsed from WCL's report-relative transitions. */
   phases: PhaseBoundary[];
+  /** Fight-relative start of each Prescience window (empty in fixed mode). */
+  casts?: number[];
 };
 
 export type AnalyzeResult = {
   report: { code: string; title: string; region: string; zone: string | null };
+  /** `fixed` also means "requested Prescience windows but found no casts". */
+  windowMode: WindowMode;
+  /** True when Prescience windows were requested but no casts were found. */
+  windowModeFallback: boolean;
+  prescienceDurationMs?: number;
   fights: AnalyzeFight[];
   windows: AnalyzeWindow[];
   rateLimit: RateLimitInfo;
@@ -113,6 +132,11 @@ export async function analyzeReport(
   const { code, fightId: urlFightId } = parseReportInput(input);
   if (!code) throw new Error('Could not find a report code in that input');
 
+  const windowMode: WindowMode =
+    options.windowMode === 'fixed' || options.windowMode === 'prescience-buff'
+      ? options.windowMode
+      : 'prescience';
+  const prescienceDurationMs = options.prescienceDurationMs ?? 18_000;
   const windowMs = options.windowMs ?? 27_000;
   const offsetMs = options.offsetMs ?? 4000;
   const slots = options.slots ?? 4;
@@ -127,25 +151,65 @@ export async function analyzeReport(
   if (!fights.length) throw new Error('No fight matched the requested id');
 
   const longest = Math.max(...fights.map((fight) => fight.endTime - fight.startTime));
-  const windows = buildWindows(longest, {
+  const fixedWindows = buildWindows(longest, {
     sizeMs: windowMs,
     offsetMs,
     ...(options.maxWindows ? { maxWindows: options.maxWindows } : {}),
   });
-  if (!windows.length) throw new Error('Fights are too short for the configured window offset');
+
+  // Prescience casts first: one window per cast, per fight. Fights differ in
+  // cast count/timing, so each gets its own list; the window index is the cast
+  // ordinal, which keeps "the Nth Prescience" comparable across pulls.
+  const castsByFightId = new Map<number, TimeWindow[]>();
+  let castsFound = 0;
+
+  if (windowMode !== 'fixed') {
+    for (const fight of fights) {
+      const casts = await fetchPrescienceCasts(client, code, fight);
+      const duration = fight.endTime - fight.startTime;
+      castsFound += casts.length;
+      castsByFightId.set(
+        fight.id,
+        windowMode === 'prescience-buff'
+          ? buildPrescienceWindows(casts, fight.startTime, duration, prescienceDurationMs)
+          : buildPrescienceIntervals(casts, fight.startTime, duration),
+      );
+    }
+  }
+
+  // No casts (no Aug Evoker in the pull, or a mode change) -> fixed grid.
+  const effectiveMode: WindowMode = windowMode !== 'fixed' && castsFound > 0 ? windowMode : 'fixed';
 
   const lookup = buildActorLookup(meta);
-  const perFight = [];
+  const perFight: { windows: TimeWindow[]; damage: WindowDamage[] }[] = [];
+  const castStartsByFightId = new Map<number, number[]>();
 
   for (const fight of fights) {
     const duration = fight.endTime - fight.startTime;
-    // Skip windows past the end of shorter fights instead of paying for empty tables.
-    const usable = windows.filter((window) => window.startTime < duration);
-    const damage = await fetchDamageWindows(client, code, fight, toReportTime(usable, fight.startTime), {
+    const windows =
+      effectiveMode === 'fixed'
+        ? fixedWindows.filter((window) => window.startTime < duration)
+        : castsByFightId.get(fight.id) ?? [];
+
+    if (!windows.length) continue;
+
+    const damage = await fetchDamageWindows(client, code, fight, toReportTime(windows, fight.startTime), {
       ...(filterExpression ? { filterExpression } : {}),
     });
 
     perFight.push({ windows, damage });
+    castStartsByFightId.set(
+      fight.id,
+      windows.map((window) => window.startTime),
+    );
+  }
+
+  if (!perFight.length) {
+    throw new Error(
+      effectiveMode !== 'fixed'
+        ? 'No Prescience casts found in the selected fights'
+        : 'Fights are too short for the configured window offset',
+    );
   }
 
   const aggregated = aggregateDamage(perFight, lookup);
@@ -170,6 +234,9 @@ export async function analyzeReport(
       region: meta.region.slug,
       zone: meta.zone?.name ?? null,
     },
+    windowMode: effectiveMode,
+    windowModeFallback: windowMode !== 'fixed' && effectiveMode === 'fixed',
+    ...(effectiveMode === 'prescience-buff' ? { prescienceDurationMs } : {}),
     fights: fights.map((fight) => ({
       id: fight.id,
       encounterID: fight.encounterID,
@@ -179,6 +246,9 @@ export async function analyzeReport(
       startTime: fight.startTime,
       endTime: fight.endTime,
       phases: fightPhases(fight),
+      ...(effectiveMode !== 'fixed'
+        ? { casts: castStartsByFightId.get(fight.id) ?? [] }
+        : {}),
     })),
     windows: visible.map((row) => ({
       index: row.window.index,

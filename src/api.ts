@@ -136,6 +136,14 @@ export async function handleApi(request: ApiRequest): Promise<ApiResponse> {
         ...(asOptionalNumber(body.maxWindows, 'maxWindows') !== undefined
           ? { maxWindows: asOptionalNumber(body.maxWindows, 'maxWindows')! }
           : {}),
+        ...(body.windowMode === 'fixed' ||
+        body.windowMode === 'prescience' ||
+        body.windowMode === 'prescience-buff'
+          ? { windowMode: body.windowMode }
+          : {}),
+        ...(asOptionalNumber(body.prescienceDurationMs, 'prescienceDurationMs') !== undefined
+          ? { prescienceDurationMs: asOptionalNumber(body.prescienceDurationMs, 'prescienceDurationMs')! }
+          : {}),
         ...(body.excludeAugmentation === true || body.excludeAugmentation === 'true'
           ? { excludeAugmentation: true }
           : {}),

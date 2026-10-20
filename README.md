@@ -3,8 +3,8 @@
 **Live:** <https://amalyzer.netlify.app> · **Repo:** <https://github.com/Wrexial/amalyzer>
 
 A small, dependency-free TypeScript core for reading **Warcraft Logs** reports and
-answering "who was doing damage in this N-second window, per fight, averaged over
-a set of pulls".
+answering "who was doing damage during each Prescience window, per fight,
+averaged over a set of pulls".
 
 It is a clean re-implementation of the log pipeline behind
 [Augmentator3000/3001](https://github.com/Liroo/augmentator3000) (Prescience
@@ -29,6 +29,7 @@ npm run typecheck
 npm run cli -- token
 npm run cli -- meta https://www.warcraftlogs.com/reports/AbCdEfGh1234
 npm run cli -- damage https://www.warcraftlogs.com/reports/AbCdEfGh1234 --fight last --slots 4
+npm run cli -- damage <report> --window-mode fixed --window 27000 --offset 4000
 npm run cli -- damage <report> --encounter 2902 --fight all --json
 npm run cli -- rankings Myalt tarren-mill EU --encounter 2902 --difficulty 5
 
@@ -62,7 +63,7 @@ invocations. No secret is ever stored server-side.
 |---|---|---|
 | `POST /api/login` | `{clientId, clientSecret}` | validates the pair against WCL |
 | `POST /api/meta` | `{report}` | fights + durations; requires credential headers |
-| `POST /api/damage` | `{report, fight, windowMs, offsetMs, slots, excludeAugmentation, ...}` | `AnalyzeResult`; requires credential headers |
+| `POST /api/damage` | `{report, fight, windowMode, prescienceDurationMs, slots, excludeAugmentation, ...}` | `AnalyzeResult`; requires credential headers |
 
 ```bash
 npx netlify dev                 # http://localhost:8888, functions included
@@ -87,8 +88,8 @@ report URL/code
 report + fights + actor table                 fetchReportMeta()
    │  (one GraphQL request)
    ▼
-window grid for the fight                     buildWindows()        src/analysis/windows.ts
-   │  [4000,26999] [27000,53999] [54000,80999] …
+window grid for the fight                     buildPrescienceWindows()  src/analysis/windows.ts
+   │  one 18s buff window per Prescience cast
    ▼
 damage per window, batched aliases            fetchDamageWindows()  src/wcl/queries.ts
    │  20 `table(...)` fields per request
@@ -168,34 +169,53 @@ Notes that matter:
 - `filterExpression` is applied server-side. `src/wcl/filters.ts` carries over the
   "does not scale with our buffs" ability lists, so trinkets and flat-damage
   procs don't win the ranking. Use `--filter none` to disable.
-- Batching 20 windows per request keeps each request cheap; a 10-minute fight is
-  ~23 windows at the 27s default → 2 requests instead of 100.
+- Batching 20 windows per request keeps each request cheap; Prescience is cast
+  roughly every 6s, so a 10-minute fight is ~100 windows → 5 requests.
 - Rate limiting is point-based per hour (`x-ratelimit-*` headers). `WCLClient`
   exposes `lastRateLimit`, retries 429 using `Retry-After`, and optionally
   throttles to a minimum gap between requests.
 
-## The window algorithm
+## Damage windows
 
-Defaults: 27 000 ms windows, 4000 ms offset.
+By default windows are not fixed intervals: each **Prescience cast** opens a
+window that ends at the next cast, and the last one ends with the fight.
 
 ```
-[0, 4000)      ignored (pull, first casts)
-[4000, 26999]  window 0  ← clipped to 23s
-[27000, 53999] window 1
-[54000, 80999] window 2
+Prescience cast @ 0:04  -> [0:04, 0:10)
+Prescience cast @ 0:10  -> [0:10, 0:16)
+Prescience cast @ 0:16  -> [0:16, 0:34)   (last cast, runs to fight end)
 …
 ```
 
-Why 27s: wide enough to smooth out cooldown/proc noise, short enough to still
-move between boss phases. Pass `--window 6000` for the original tool's Ebon
-Might tick cadence. Why the 4s offset: the first useful buff lands a few seconds
-into the pull.
+How it is built:
 
-The grid stays anchored to fight start — window *n* always begins at
-`n * 27000` — so the same index means the same moment of the fight across pulls.
-Only window 0 is clipped. `buildWindows()` reproduces the original
-`generateTimeRanges()` exactly at `sizeMs: 6000` (unit-tested), and
-`toReportTime()` shifts the grid into absolute time for the query.
+1. `fetchPrescienceCasts()` asks WCL for `events(dataType: Casts,
+   abilityID: 409311)` in each selected fight. The cast id is 409311; the aura
+   it applies is 410089. The id is filtered server-side.
+2. `buildPrescienceIntervals()` converts report-relative event timestamps to
+   fight-relative windows and uses the **cast ordinal** as the window index.
+   Window N is therefore the Nth Prescience of every pull, which is what lines
+   up across pulls.
+3. There is no start offset: the first window begins at the first cast.
+
+Two other modes are available via `windowMode`:
+
+- `prescience-buff` — each cast opens a window lasting the buff duration
+  (`prescienceDurationMs`, default 18 000 ms, UI field /
+  `--prescience-duration`). Buffs last longer than the ~6s cast cadence, so
+  these windows overlap. Use this to ask "what did the raid do while the buff
+  was up" instead of "what happened between casts".
+- `fixed` — the old clock grid: 27 000 ms windows, 4000 ms offset, anchored to
+  fight start. `buildWindows()` still reproduces the original
+  `generateTimeRanges()` exactly at `sizeMs: 6000`. Pass
+  `--window-mode fixed` (or just `--window`/`--offset`) to force it.
+
+If no casts are found in any selected fight (no Augmentation Evoker was logged),
+the analysis falls back to the fixed grid and reports `windowModeFallback`.
+
+Windows for different fights no longer share timestamps, so each fight gets its
+own list; `aggregateDamage()` still merges by index. `toReportTime()` shifts the
+per-fight list into absolute time for the `table` query.
 
 ## Aggregation semantics
 
@@ -205,7 +225,9 @@ subtle enough to state explicitly:
 - A window where an actor did **zero** damage is dropped, not averaged in — dead
   players and intermissions would otherwise poison the ranking.
 - `average = total / contributingWindows`, not `total / fightCount`.
-- Results are keyed by window **index**, so fights of different lengths line up.
+- Results are keyed by window **index** — the cast ordinal in Prescience mode —
+  so the same row means the same Prescience across pulls (and the same grid slot
+  in fixed mode).
 - Unknown actor ids (unassigned pets, NPCs missing from `masterData`) are dropped.
 
 `buildAssignments()` then applies exclusion, then forced picks in the given
@@ -258,16 +280,18 @@ classes with multiple roles (e.g. Feral/Guardian).
 - Token caching, 401 refresh, 429/5xx backoff and optional request throttling.
 - Actor ids normalised before joining; `masterData.actors` used as the primary
   name source.
+- Windows default to the log's real **Prescience casts** instead of a fixed 6s
+  grid; the fixed grid is still selectable.
 - A dependency-free UI (`public/index.html`) with phase grouping, class colours
   and icons; the core stays plain functions you can call from a server route, a
   worker or another UI. No state management, no analytics/Sentry.
 
 ## Extending it
 
-- **Other buffs**: replace `buildWindows` cadence and the assignment rule. The
-  WCL side is buff-agnostic.
-- **Buff uptime / casts**: switch `dataType` to `Casts` or query
-  `events(dataType: Buffs, abilityID: …)`; same window slicing applies.
+- **Other buffs**: change `PRESCIENCE_CAST_ID` / `prescienceDurationMs` and the
+  assignment rule; window building is otherwise buff-agnostic.
+- **Actual aura uptime**: switch the events query to `dataType: Buffs` with
+  `PRESCIENCE_BUFF_ID` (410089) to slice by apply/refresh events instead of casts.
 - **Server-side keys**: move `WCLClient` behind your own route and hand it a
   token, rather than shipping a client secret to the browser. The original asks
   each user for their own key instead, which is the alternative.

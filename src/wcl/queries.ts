@@ -201,3 +201,63 @@ export type CharacterRankingsResponse = {
     } | null;
   };
 };
+
+/**
+ * Prescience cast and buff ids (Dragonflight/The War Within Evoker).
+ *
+ * The cast (what appears in `Casts` events) is 409311; the aura it applies
+ * (`Buffs` events) is 410089. The aura lasts 18s at the time of writing, but
+ * that has changed across patches, so the duration is an analysis option.
+ */
+export const PRESCIENCE_CAST_ID = 409311;
+export const PRESCIENCE_BUFF_ID = 410089;
+
+/**
+ * Pulls one fight's Prescience casts.
+ *
+ * `events.data` is a JSON scalar (array of raw events). `abilityID` filters
+ * server-side, so the page is tiny even with a high `limit`.
+ */
+export const PRESCIENCE_CASTS_QUERY = /* GraphQL */ `
+  query PrescienceCasts(
+    $code: String!
+    $fightId: Int!
+    $startTime: Float!
+    $endTime: Float!
+  ) {
+    reportData {
+      report(code: $code) {
+        events(
+          dataType: Casts
+          fightIDs: [$fightId]
+          startTime: $startTime
+          endTime: $endTime
+          abilityID: ${PRESCIENCE_CAST_ID}
+          limit: 1000
+        ) {
+          data
+          nextPageTimestamp
+        }
+      }
+    }
+  }
+`;
+
+export type WclCastEvent = {
+  timestamp: number;
+  type?: string;
+  sourceID?: number;
+  targetID?: number;
+  abilityGameID?: number;
+};
+
+export type PrescienceCastsResponse = {
+  reportData: {
+    report: {
+      events: {
+        data: WclCastEvent[] | null;
+        nextPageTimestamp: number | null;
+      } | null;
+    } | null;
+  };
+};

@@ -46,6 +46,71 @@ export function buildWindows(durationMs: number, options: WindowOptions = {}): T
   return windows;
 }
 
+/**
+ * Builds one window per Prescience cast: `[cast, next cast)`.
+ *
+ * The last cast runs to the end of the fight. Cast timestamps are
+ * report-relative (WCL events use report time); the resulting windows are
+ * fight-relative and deduplicated. Window N is the Nth Prescience, so it lines
+ * up with the same cast of every pull.
+ */
+export function buildPrescienceIntervals(
+  castTimestamps: number[],
+  fightStartTime: number,
+  durationMs: number,
+): TimeWindow[] {
+  const starts = [
+    ...new Set(
+      castTimestamps
+        .map((timestamp) => Math.round(timestamp) - fightStartTime)
+        .filter((startTime) => startTime >= 0 && startTime < durationMs),
+    ),
+  ].sort((a, b) => a - b);
+
+  return starts.map((startTime, index) => ({
+    index,
+    startTime,
+    endTime: index + 1 < starts.length ? starts[index + 1]! - 1 : durationMs - 1,
+  }));
+}
+
+/**
+ * Builds one window per Prescience cast: `[cast, cast + buffDuration)`.
+ *
+ * Use this when the question is "what did the buffed raid do while the buff was
+ * up" rather than "what happened between casts". Windows overlap when casts
+ * are closer together than the buff duration (they usually are: 2 charges on a
+ * 12s recharge means a cast every ~6s, while the buff lasts 18s).
+ *
+ * Cast timestamps are report-relative; the resulting windows are fight-relative
+ * and clipped to the fight's end.
+ */
+export function buildPrescienceWindows(
+  castTimestamps: number[],
+  fightStartTime: number,
+  durationMs: number,
+  buffDurationMs: number,
+): TimeWindow[] {
+  if (buffDurationMs <= 0) throw new Error('buffDurationMs must be > 0');
+
+  const windows: TimeWindow[] = [];
+  const seen = new Set<number>();
+
+  for (const timestamp of [...castTimestamps].sort((a, b) => a - b)) {
+    const startTime = Math.round(timestamp) - fightStartTime;
+    if (startTime < 0 || startTime >= durationMs || seen.has(startTime)) continue;
+    seen.add(startTime);
+
+    windows.push({
+      index: windows.length,
+      startTime,
+      endTime: Math.min(startTime + buffDurationMs - 1, durationMs - 1),
+    });
+  }
+
+  return windows;
+}
+
 /** Shifts fight-relative windows into report time (what the WCL query needs). */
 export function toReportTime(windows: TimeWindow[], fightStartTime: number): TimeWindow[] {
   return windows.map((window) => ({

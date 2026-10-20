@@ -70,10 +70,11 @@
       }
 
       input:focus, select:focus { border-color: var(--accent); }
+      input:disabled, select:disabled { opacity: 0.45; cursor: not-allowed; }
 
       .grid { display: grid; gap: 14px; }
       .grid.cols-2 { grid-template-columns: 1fr 1fr; }
-      .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+      .grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
 
       .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
 
@@ -271,16 +272,28 @@
             </select>
           </div>
           <div>
-            <label for="windowMs">Window (ms)</label>
-            <input id="windowMs" type="number" value="27000" min="1000" step="500" />
+            <label for="windowMode">Window source</label>
+            <select id="windowMode">
+              <option value="prescience">Prescience casts (to next cast)</option>
+              <option value="prescience-buff">Prescience buff window</option>
+              <option value="fixed">Fixed interval</option>
+            </select>
           </div>
           <div>
-            <label for="offsetMs">Start offset (ms)</label>
-            <input id="offsetMs" type="number" value="4000" min="0" step="500" />
+            <label for="prescienceMs">Prescience buff (ms)</label>
+            <input id="prescienceMs" type="number" value="18000" min="1000" step="500" />
           </div>
           <div>
             <label for="slots">Targets per window</label>
             <input id="slots" type="number" value="4" min="1" max="10" />
+          </div>
+          <div>
+            <label for="windowMs">Window (ms)</label>
+            <input id="windowMs" type="number" value="27000" min="1000" step="500" disabled />
+          </div>
+          <div>
+            <label for="offsetMs">Start offset (ms)</label>
+            <input id="offsetMs" type="number" value="4000" min="0" step="500" disabled />
           </div>
         </div>
 
@@ -290,10 +303,12 @@
           <button id="logout" class="ghost" style="margin-left: auto">Disconnect</button>
         </div>
         <p class="hint">
-          <code>Load fights</code> fills the fight list from the report. Filtering uses the default
-          ability filter (drops non-scaling trinket damage); leave it alone unless you know why.
-          After analysing you can switch between DPS and raw damage, or hide Augmentation Evokers
-          without re-querying.
+          <code>Load fights</code> fills the fight list from the report. By default each window runs
+          from one Prescience cast to the next, so the target list answers "who should get the next
+          Prescience". A per-cast buff-duration window and the old fixed interval are also
+          available. Filtering uses the default ability filter (drops non-scaling trinket damage);
+          leave it alone unless you know why. After analysing you can switch between DPS and raw
+          damage, or hide Augmentation Evokers without re-querying.
         </p>
       </section>
 
@@ -378,8 +393,7 @@
         return img;
       };
       /** Last phase boundary at or before `timeMs` (fight-relative). */
-      const phaseAt = (phases, timeMs) => {
-        let current;
+      const phaseAt = (phases, timeMs) => {        let current;
         for (const phase of phases) {
           if (phase.startTime > timeMs) break;
           current = phase;
@@ -390,6 +404,13 @@
       const isAugEvoker = (entry) =>
         /^evoker$/i.test(entry?.class || '') &&
         (entry?.specs || []).some((spec) => /^augmentation$/i.test(spec));
+
+      const windowModeLabel = (mode) =>
+        mode === 'prescience'
+          ? 'Prescience intervals'
+          : mode === 'prescience-buff'
+            ? 'Prescience buff windows'
+            : 'windows';
 
       /** Value for the currently selected metric. */
       const metricValue = (entry) =>
@@ -530,6 +551,8 @@
           const result = await api('/api/damage', {
             report,
             fight: $('fight').value,
+            windowMode: $('windowMode').value,
+            prescienceDurationMs: Number($('prescienceMs').value),
             windowMs: Number($('windowMs').value),
             offsetMs: Number($('offsetMs').value),
             slots: Number($('slots').value),
@@ -553,6 +576,15 @@
         });
       });
 
+      $('windowMode').addEventListener('change', syncWindowMode);
+
+      function syncWindowMode() {
+        const mode = $('windowMode').value;
+        $('prescienceMs').disabled = mode !== 'prescience-buff';
+        $('windowMs').disabled = mode !== 'fixed';
+        $('offsetMs').disabled = mode !== 'fixed';
+      }
+
       $('hideAug').addEventListener('change', () => {
         if (state.result) render(state.result);
       });
@@ -565,7 +597,8 @@
         $('report-meta').textContent =
           `${result.report.code} · ${result.report.region}` +
           (result.report.zone ? ` · ${result.report.zone}` : '') +
-          ` · ${result.windows.length} windows`;
+          ` · ${result.windows.length} ${windowModeLabel(result.windowMode)}` +
+          (result.windowModeFallback ? ' · no Prescience casts, fixed fallback' : '');
 
         const fights = $('fights');
         fights.replaceChildren();
@@ -576,8 +609,9 @@
         const table = el('table');
         const head = el('thead');
         const headRow = el('tr');
-        ['Window', state.metric === 'average' ? 'Targets (damage)' : 'Targets (DPS)'].forEach((title) =>
-          headRow.append(el('th', '', title)),
+        const windowHeading = result.windowMode === 'fixed' ? 'Window' : 'Prescience';
+        [windowHeading, state.metric === 'average' ? 'Targets (damage)' : 'Targets (DPS)'].forEach(
+          (title) => headRow.append(el('th', '', title)),
         );
         head.append(headRow);
         table.append(head);
@@ -599,7 +633,15 @@
 
         let currentPhase;
         result.windows.forEach((window) => {
-          const phase = phases.length ? phaseAt(phases, window.startTime) : undefined;
+          // In Prescience mode the nth row is the nth cast, so use the reference
+          // fight's cast time for phase grouping (the aggregate time comes from
+          // whichever fight was processed last).
+          const referenceStart = reference?.casts?.[window.index];
+          const phaseTime =
+            result.windowMode !== 'fixed' && referenceStart != null
+              ? referenceStart
+              : window.startTime;
+          const phase = phases.length ? phaseAt(phases, phaseTime) : undefined;
           const phaseId = phase ? phase.id : undefined;
           if (phaseId !== currentPhase) {
             currentPhase = phaseId;
@@ -617,7 +659,14 @@
           }
 
           const row = el('tr');
-          row.append(el('td', 'time', `${clock(window.startTime)}–${clock(window.endTime + 1)}`));
+          const castStart = reference?.casts?.[window.index];
+          const windowText =
+            result.windowMode !== 'fixed'
+              ? castStart != null
+                ? `#${window.index + 1} · ${clock(castStart)}`
+                : `#${window.index + 1}`
+              : `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
+          row.append(el('td', 'time', windowText));
 
           const cell = el('td');
           const targets = el('div', 'targets');
@@ -654,11 +703,12 @@
         const { limit, points } = result.rateLimit || {};
         $('foot').replaceChildren(
           el('span', '', limit && points != null ? `Rate limit: ${points}/${limit} points` : ''),
-          el('span', '', 'Sorted by expected damage in each window; * = forced priority.'),
+          el('span', '', `Sorted by ${state.metric === 'average' ? 'damage' : 'DPS'} in each ${result.windowMode === 'fixed' ? 'window' : 'Prescience window'}; * = forced priority.`),
         );
       }
 
       showLoggedIn(Boolean(readCredentials()));
+      syncWindowMode();
     </script>
   </body>
 </html>

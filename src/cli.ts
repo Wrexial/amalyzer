@@ -107,9 +107,21 @@ async function commandMeta(client: WCLClient, input: string, flags: Flags) {
 }
 
 async function commandDamage(client: WCLClient, input: string, flags: Flags) {
+  const requestedMode = strFlag(flags, 'window-mode');
+  const windowMode =
+    requestedMode === 'fixed' ||
+    requestedMode === 'prescience' ||
+    requestedMode === 'prescience-buff'
+      ? requestedMode
+      : flags.window || flags.offset
+        ? 'fixed'
+        : 'prescience';
+
   const result = await analyzeReport(client, input, {
     ...(flags.fight && flags.fight !== true ? { fight: String(flags.fight) } : {}),
     ...(flags.encounter ? { encounterID: numFlag(flags, 'encounter', 0) } : {}),
+    windowMode,
+    prescienceDurationMs: numFlag(flags, 'prescience-duration', 18_000),
     windowMs: numFlag(flags, 'window', 27_000),
     offsetMs: numFlag(flags, 'offset', 4000),
     slots: numFlag(flags, 'slots', 4),
@@ -185,6 +197,7 @@ function printUsage() {
       '  token',
       '  meta <report-url|code> [--encounter <id>]',
       '  damage <report-url|code> [--fight <id|last|all>] [--encounter <id>]',
+      '         [--window-mode prescience|prescience-buff|fixed] [--prescience-duration 18000]',
       '         [--window 27000] [--offset 4000] [--slots 4]',
       '         [--filter <expr|none>] [--max-windows <n>] [--exclude-augmentation] [--json]',
       '  rankings <name> <serverSlug> <region> --encounter <id> --difficulty <id>',
