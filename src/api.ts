@@ -101,6 +101,17 @@ export async function handleApi(request: ApiRequest): Promise<ApiResponse> {
           title: meta.title,
           region: meta.region.slug,
           zone: meta.zone?.name ?? null,
+          augmenters: meta.players
+            .filter(
+              (player) =>
+                player.type.toLowerCase() === 'evoker' &&
+                (player.specs ?? []).some((spec) => spec.spec.toLowerCase() === 'augmentation'),
+            )
+            .map((player) => ({
+              id: player.id,
+              name: player.name,
+              ...(player.server ? { server: player.server } : {}),
+            })),
           fights: selectFights(meta, encounterID).map((fight) => ({
             id: fight.id,
             name: fight.name,
@@ -120,6 +131,12 @@ export async function handleApi(request: ApiRequest): Promise<ApiResponse> {
         ...(typeof body.fight === 'string' && body.fight ? { fight: body.fight } : {}),
         ...(asOptionalNumber(body.encounterID, 'encounterID') !== undefined
           ? { encounterID: asOptionalNumber(body.encounterID, 'encounterID')! }
+          : {}),
+        ...(asOptionalNumber(body.augmenterId, 'augmenterId') !== undefined
+          ? { augmenterId: asOptionalNumber(body.augmenterId, 'augmenterId')! }
+          : {}),
+        ...(typeof body.augmenterName === 'string' && body.augmenterName.trim()
+          ? { augmenterName: body.augmenterName.trim() }
           : {}),
         ...(asOptionalNumber(body.windowMs, 'windowMs') !== undefined
           ? { windowMs: asOptionalNumber(body.windowMs, 'windowMs')! }

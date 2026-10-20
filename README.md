@@ -214,11 +214,22 @@ How it is built:
 
 The first column is two lines: `#N - start - end - duration` (e.g.
 `#2 - 0:09 - 0:28 - 18.4s`) and the buff target's name, class-coloured, with
-the class icon. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+the class icon. Each row also shows an **estimated buff gain** for the target
+(`target damage × 3%` for Prescience crit, `× 2%` for Shifting Sands
+versatility). Those gains are summed per caster and printed in the footer, so
+the Aug Evoker gets credit for the buff's contribution. Recasts get a yellow **extended** badge and a yellow row tint, and a red
 **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
 `--prescience-duration`) is only a fallback for missing removal events.
+
+### Multiple Aug Evokers
+
+With more than one Augmentation Evoker, the **Aug Evoker** selector in the UI
+(or `--augmenter <name>`) filters casts/applications to one caster so window
+ordinals line up cleanly across pulls. With **All**, every window still carries
+its caster (`aug` in `AnalyzeResult`), and the per-caster damage credit and
+footer totals remain correct.
 
 ### Shifting Sands
 

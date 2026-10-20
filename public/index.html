@@ -316,6 +316,7 @@
       .compare .up { color: var(--good); }
       .compare .down { color: var(--bad); }
       .foot .gain { color: var(--good); font-weight: 600; }
+      .foot .aug-gain { color: var(--accent-2); font-weight: 600; }
 
       .target-dps { font-variant-numeric: tabular-nums; color: var(--muted); }
 
@@ -378,6 +379,12 @@
             </select>
           </div>
           <div>
+            <label for="augmenter">Aug Evoker</label>
+            <select id="augmenter">
+              <option value="all">All Augmentation Evokers</option>
+            </select>
+          </div>
+          <div>
             <label for="windowMode">Window source</label>
             <select id="windowMode">
               <option value="prescience-buff" selected>Prescience buff window</option>
@@ -412,9 +419,10 @@
           <code>Load fights</code> fills the fight list from the report. Each window is a Prescience
           cast (or Shifting Sands application) plus the aura's measured lifetime; the fallback value
           is only used when the log is missing the removal. Filtering uses the default ability filter
-          (drops non-scaling trinket damage); leave it alone unless you know why. After analysing you
-          can switch between DPS and raw damage, hide Augmentation Evokers, or compare buffed vs
-          unbuffed targets without re-querying.
+          (drops non-scaling trinket damage); leave it alone unless you know why. For multi-Aug raids
+          pick one in the Aug Evoker field (or keep All; each row will show its caster). After
+          analysing you can switch between DPS and raw damage, hide Augmentation Evokers, or compare
+          buffed vs unbuffed targets without re-querying.
         </p>
       </section>
 
@@ -638,6 +646,32 @@
         try {
           const meta = await api('/api/meta', { report });
           state.fights = meta.fights;
+
+          const augSelect = $('augmenter');
+          const previousAug = augSelect.value;
+          augSelect.replaceChildren(
+            Object.assign(document.createElement('option'), {
+              value: 'all',
+              textContent: 'All Augmentation Evokers',
+            }),
+          );
+          (meta.augmenters ?? []).forEach((augmenter) => {
+            const label = augmenter.server
+              ? `${augmenter.name} (${augmenter.server})`
+              : augmenter.name;
+            augSelect.append(
+              Object.assign(document.createElement('option'), {
+                value: String(augmenter.id),
+                textContent: label,
+              }),
+            );
+          });
+          augSelect.value = [...augSelect.options].some(
+            (option) => option.value === previousAug,
+          )
+            ? previousAug
+            : 'all';
+
           const select = $('fight');
           select.replaceChildren(
             Object.assign(document.createElement('option'), { value: 'last', textContent: 'Last kill' }),
@@ -689,6 +723,9 @@
             report,
             fight: $('fight').value,
             windowMode: $('windowMode').value,
+            ...($('augmenter').value !== 'all'
+              ? { augmenterId: Number($('augmenter').value) }
+              : {}),
             ...($('windowMode').value === 'shifting-sands'
               ? { shiftingSandsDurationMs: Number($('prescienceMs').value) }
               : { prescienceDurationMs: Number($('prescienceMs').value) }),
@@ -764,6 +801,12 @@
         const head = el('thead');
         const headRow = el('tr');
         const auraName = result.windowMode === 'shifting-sands' ? 'Shifting Sands' : 'Prescience';
+        const buffRate =
+          result.windowMode === 'prescience-buff'
+            ? 0.03
+            : result.windowMode === 'shifting-sands'
+              ? 0.02
+              : 0;
         const windowHeading =
           result.windowMode === 'fixed'
             ? 'Window'
@@ -792,6 +835,7 @@
         let theoreticalGain = 0;
         let theoreticalDamage = 0;
         let theoreticalWindows = 0;
+        const augTotals = new Map();
 
         let currentPhase;
         result.windows.forEach((window) => {
@@ -942,6 +986,30 @@
             if (targetEntry) {
               const compare = el('div', 'compare');
               const unit = state.metric === 'average' ? 'damage' : 'DPS';
+              const gainDamage = targetEntry.average * buffRate;
+              const gainDps = targetEntry.dps * buffRate;
+
+              if (buffRate > 0) {
+                compare.append(
+                  el(
+                    'span',
+                    'up',
+                    `Est. gain: +${fmt(gainDamage)} damage (${fmt(gainDps)} DPS)`,
+                  ),
+                );
+
+                const augKey = window.aug?.key ?? 'unknown';
+                const total = augTotals.get(augKey) ?? {
+                  name: window.aug?.name ?? 'Unknown Aug',
+                  damage: 0,
+                  dps: 0,
+                  windows: 0,
+                };
+                total.damage += gainDamage;
+                total.dps += gainDps;
+                total.windows += 1;
+                augTotals.set(augKey, total);
+              }
               compare.append(
                 el(
                   'span',
@@ -986,9 +1054,20 @@
             '',
             result.windowMode === 'fixed'
               ? ''
-              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}.`,
+              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; est. gain = target damage × ${buffRate * 100}%.`,
           ),
         ];
+
+        for (const total of augTotals.values()) {
+          if (!total.windows) continue;
+          footItems.push(
+            el(
+              'span',
+              'aug-gain',
+              `Est. buff damage → ${total.name}: +${fmt(total.damage)} damage · +${fmt(total.dps / total.windows)} DPS avg per window`,
+            ),
+          );
+        }
 
         if (theoreticalWindows > 0) {
           footItems.push(

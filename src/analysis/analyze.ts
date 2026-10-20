@@ -43,6 +43,10 @@ export type AnalyzeOptions = {
   maxWindows?: number;
   /** Drop Augmentation Evokers from the rankings and assignments. */
   excludeAugmentation?: boolean;
+  /** Only analyze this Augmentation Evoker's casts/applications (actor id). */
+  augmenterId?: number;
+  /** Name alternative to `augmenterId`. */
+  augmenterName?: string;
 };
 
 export type AnalyzeWindowEntry = {
@@ -65,8 +69,10 @@ export type AnalyzeWindow = {
   startTime: number;
   endTime: number;
   entries: AnalyzeWindowEntry[];
-  /** Actor this row's Prescience was cast on, when known. */
+  /** Actor this row's Prescience/Shifting Sands was applied to, when known. */
   castTarget?: { key: string; name: string };
+  /** Aug Evoker that applied this window's buff. */
+  aug?: { key: string; name: string };
   /** Raw cast target when WCL logged a non-player (usually an enemy boss). */
   castEnemyTarget?: { name: string };
   /** Actors with an active Prescience at this window's cast (cast target included). */
@@ -94,6 +100,8 @@ export type PrescienceCastInfo = {
   enemyTarget?: { name: string };
   /** True when this cast refreshed an existing Prescience on the same target. */
   extended?: boolean;
+  /** Aug Evoker that cast/applied this window's buff. */
+  source?: { key: string; name: string };
 };
 
 export type AnalyzeFight = Pick<
@@ -170,6 +178,13 @@ export async function analyzeReport(
     options.filterExpression === undefined ? DEFAULT_DAMAGE_FILTER : options.filterExpression;
 
   const meta = await fetchReportMeta(client, code);
+  const augmenterId =
+    options.augmenterId ??
+    (options.augmenterName
+      ? meta.players.find(
+          (player) => player.name.toLowerCase() === options.augmenterName!.trim().toLowerCase(),
+        )?.id
+      : undefined);
   const candidates = selectFights(meta, options.encounterID);
   if (!candidates.length) throw new Error('No analyzable encounters in this report');
 
@@ -205,10 +220,13 @@ export async function analyzeReport(
           fight.endTime,
           shiftingSandsDurationMs,
         );
-        castsFound += applications.length;
+        const windowApplications = augmenterId
+          ? applications.filter((application) => application.sourceID === augmenterId)
+          : applications;
+        castsFound += windowApplications.length;
 
         const windows = buildPrescienceWindows(
-          applications.map((application) => ({
+          windowApplications.map((application) => ({
             timestamp: application.timestamp,
             endTimestamp: application.endTimestamp,
           })),
@@ -219,14 +237,20 @@ export async function analyzeReport(
         castsByFightId.set(fight.id, windows);
 
         const targetByStart = new Map<number, { key: string; name: string }>();
+        const sourceByStart = new Map<number, { key: string; name: string }>();
         const extendedByStart = new Set<number>();
-        for (const application of applications) {
+        for (const application of windowApplications) {
           const actor = lookup.get(application.targetID);
           if (!actor) continue;
 
           const startTime = Math.round(application.timestamp) - fight.startTime;
           if (!targetByStart.has(startTime)) {
             targetByStart.set(startTime, { key: actor.key, name: actor.name });
+          }
+          const sourceActor =
+            application.sourceID != null ? lookup.get(application.sourceID) : undefined;
+          if (sourceActor && !sourceByStart.has(startTime)) {
+            sourceByStart.set(startTime, { key: sourceActor.key, name: sourceActor.name });
           }
           if (application.extended) extendedByStart.add(startTime);
         }
@@ -240,6 +264,9 @@ export async function analyzeReport(
               ? { target: targetByStart.get(window.startTime)! }
               : {}),
             ...(extendedByStart.has(window.startTime) ? { extended: true } : {}),
+            ...(sourceByStart.has(window.startTime)
+              ? { source: sourceByStart.get(window.startTime)! }
+              : {}),
           })),
         );
 
@@ -279,7 +306,10 @@ export async function analyzeReport(
         fight.endTime,
         prescienceDurationMs,
       );
-      const casts = matchPrescienceRecipients(rawCasts, applications);
+      const casts = matchPrescienceRecipients(
+        augmenterId ? rawCasts.filter((cast) => cast.sourceID === augmenterId) : rawCasts,
+        applications,
+      );
       const duration = fight.endTime - fight.startTime;
       castsFound += casts.length;
 
@@ -299,6 +329,7 @@ export async function analyzeReport(
       const targetByStart = new Map<number, { key: string; name: string }>();
       const enemyByStart = new Map<number, { name: string }>();
       const extendedByStart = new Set<number>();
+      const sourceByStart = new Map<number, { key: string; name: string }>();
 
       for (const cast of casts) {
         const rawTarget = cast.targetID != null ? lookup.get(cast.targetID) : undefined;
@@ -318,6 +349,11 @@ export async function analyzeReport(
         }
 
         if (cast.extended) extendedByStart.add(startTime);
+
+        const sourceActor = cast.sourceID != null ? lookup.get(cast.sourceID) : undefined;
+        if (sourceActor && !sourceByStart.has(startTime)) {
+          sourceByStart.set(startTime, { key: sourceActor.key, name: sourceActor.name });
+        }
       }
 
       castInfoByFightId.set(
@@ -332,6 +368,9 @@ export async function analyzeReport(
             ? { enemyTarget: enemyByStart.get(window.startTime)! }
             : {}),
           ...(extendedByStart.has(window.startTime) ? { extended: true } : {}),
+          ...(sourceByStart.has(window.startTime)
+            ? { source: sourceByStart.get(window.startTime)! }
+            : {}),
         })),
       );
 
@@ -410,6 +449,7 @@ export async function analyzeReport(
   // fight's cast target/buff state for each ordinal (falling back to shorter
   // fights).
   const castTargetByIndex = new Map<number, { key: string; name: string }>();
+  const augByIndex = new Map<number, { key: string; name: string }>();
   const enemyTargetByIndex = new Map<number, { name: string }>();
   const buffedByIndex = new Map<number, { key: string; name: string }[]>();
   const fightsLongestFirst = [...fights].sort(
@@ -418,6 +458,7 @@ export async function analyzeReport(
   for (const fight of fightsLongestFirst) {
     (castInfoByFightId.get(fight.id) ?? []).forEach((cast, index) => {
       if (cast.target && !castTargetByIndex.has(index)) castTargetByIndex.set(index, cast.target);
+      if (cast.source && !augByIndex.has(index)) augByIndex.set(index, cast.source);
       if (cast.enemyTarget && !enemyTargetByIndex.has(index)) {
         enemyTargetByIndex.set(index, cast.enemyTarget);
       }
@@ -464,6 +505,7 @@ export async function analyzeReport(
       ...(castTargetByIndex.has(row.window.index)
         ? { castTarget: castTargetByIndex.get(row.window.index)! }
         : {}),
+      ...(augByIndex.has(row.window.index) ? { aug: augByIndex.get(row.window.index)! } : {}),
       ...(enemyTargetByIndex.has(row.window.index)
         ? { castEnemyTarget: enemyTargetByIndex.get(row.window.index)! }
         : {}),
