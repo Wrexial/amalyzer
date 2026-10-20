@@ -47,20 +47,3 @@ test('window query emits one alias per window and only includes filter when aske
   assert.doesNotMatch(unfiltered, /\$filter/);
 });
 
-test('support table is filtered by buff, caster and supported actor', () => {
-  const query = buildDamageWindowsQuery(
-    [
-      {
-        startTime: 1000,
-        endTime: 2000,
-        support: { abilityId: 413984, sourceId: 7, targetId: 9 },
-      },
-    ],
-    false,
-  );
-
-  assert.match(query, /s0: table\(/);
-  assert.match(query, /abilityID: 413984/);
-  assert.match(query, /sourceID: 7/);
-  assert.match(query, /supportedActor\.id = 9/);
-});

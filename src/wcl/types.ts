@@ -90,8 +90,6 @@ export type WindowDamage = {
   /** Index into the window grid, not a timestamp. */
   windowIndex: number;
   entries: DamageTableEntry[];
-  /** WCL-reattributed support damage for this window's buff (if requested). */
-  supportDamage?: number;
 };
 
 export type EncounterRank = {

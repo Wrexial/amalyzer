@@ -363,10 +363,16 @@
 
       <section class="panel hidden" id="query-panel">
         <h2>Report</h2>
-        <div class="grid">
+        <div class="grid cols-2">
           <div>
             <label for="report">Report URL or code</label>
             <input id="report" placeholder="https://www.warcraftlogs.com/reports/AbCdEfGh1234" spellcheck="false" />
+          </div>
+          <div>
+            <label for="savedReports">Saved reports</label>
+            <select id="savedReports">
+              <option value="">— pick a saved report —</option>
+            </select>
           </div>
         </div>
 
@@ -464,6 +470,7 @@
         fallbackByMode: { 'prescience-buff': 18_000, 'shifting-sands': 10_400 },
       };
       const STORAGE_KEY = 'amalyzer.wcl-credentials';
+      const REPORTS_KEY = 'amalyzer.saved-reports';
 
       function readCredentials() {
         try {
@@ -476,6 +483,72 @@
       function writeCredentials(credentials) {
         if (credentials) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(credentials));
         else sessionStorage.removeItem(STORAGE_KEY);
+      }
+
+      function reportCode(input) {
+        return input.match(/reports\/([A-Za-z0-9]+)/)?.[1] ?? input.trim();
+      }
+
+      function readSavedReports() {
+        try {
+          const list = JSON.parse(localStorage.getItem(REPORTS_KEY) || '[]');
+          return Array.isArray(list) ? list : [];
+        } catch {
+          return [];
+        }
+      }
+
+      function writeSavedReports(list) {
+        try {
+          localStorage.setItem(REPORTS_KEY, JSON.stringify(list));
+        } catch {
+          /* storage unavailable */
+        }
+      }
+
+      function renderSavedReports() {
+        const select = $('savedReports');
+        if (!select) return;
+
+        const current = select.value;
+        select.replaceChildren(
+          Object.assign(document.createElement('option'), {
+            value: '',
+            textContent: '— pick a saved report —',
+          }),
+        );
+
+        for (const report of readSavedReports()) {
+          const label = report.title
+            ? `${report.title} (${report.code})`
+            : report.code;
+          select.append(
+            Object.assign(document.createElement('option'), {
+              value: report.url,
+              textContent: label,
+            }),
+          );
+        }
+
+        if ([...select.options].some((option) => option.value === current)) {
+          select.value = current;
+        }
+      }
+
+      function saveReport(input, meta) {
+        const trimmed = input.trim();
+        if (!trimmed) return;
+
+        const code = meta?.code ?? reportCode(trimmed);
+        const list = readSavedReports().filter((report) => report.code !== code);
+        list.unshift({
+          code,
+          url: trimmed,
+          title: meta?.title ?? '',
+          savedAt: Date.now(),
+        });
+        writeSavedReports(list.slice(0, 20));
+        renderSavedReports();
       }
 
       const fmt = (n) =>
@@ -637,6 +710,14 @@
         setStatus('Disconnected.');
       });
 
+      $('savedReports').addEventListener('change', () => {
+        const url = $('savedReports').value;
+        if (!url) return;
+
+        $('report').value = url;
+        if (state.authenticated) $('load').click();
+      });
+
       $('load').addEventListener('click', async () => {
         const report = $('report').value.trim();
         if (!report) return setStatus('Paste a report URL first.', 'error');
@@ -681,6 +762,7 @@
             const label = `#${fight.id} ${fight.kill ? 'kill' : Math.round(fight.fightPercentage ?? 0) + '%'} · ${fight.name} · ${clock(fight.durationMs)}`;
             select.append(Object.assign(document.createElement('option'), { value: String(fight.id), textContent: label }));
           });
+          saveReport($('report').value, meta);
           renderFightList(meta);
           setStatus(`${meta.fights.length} fight(s) loaded from "${meta.title}".`, 'ok');
         } catch (error) {
@@ -733,6 +815,7 @@
             offsetMs: Number($('offsetMs').value),
             slots: Number($('slots').value),
           });
+          saveReport($('report').value, result.report);
           render(result);
           setStatus('', '');
         } catch (error) {
@@ -1083,6 +1166,7 @@
       }
 
       showLoggedIn(Boolean(readCredentials()));
+      renderSavedReports();
       syncWindowMode();
     </script>
   </body>

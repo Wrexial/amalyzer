@@ -215,16 +215,24 @@ How it is built:
 The first column is two lines: `#N - start - end - duration` (e.g.
 `#2 - 0:09 - 0:28 - 18.4s`) and the buff target's name, class-coloured, with
 the class icon. Each row also shows the **WCL-reattributed support damage** for that window.
-Warcraft Logs already attributes buff-gained damage back to the Aug Evoker; the
-analysis asks the same `table(dataType: DamageDone)` for the buff ability
-(410089 / 413984) filtered to that caster and `viewBy: Ability`, so the number
-comes from the log's support events rather than a crit/versatility estimate.
-The credited damage is summed per caster in the footer. Negative support events
-(known WCL quirk with stacked enemies) are kept as-is. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+Warcraft Logs records this as support damage events: the buff ability id
+(410089 / 413984), `sourceID` = the Aug, `supportID` = the buffed player, and
+`amount` = the credited damage. The analysis fetches those events for the fight
+and buckets them onto the matching buff application (`supportID` + `sourceID` +
+active interval), so a row means exactly "this player's buff damage from this
+Aug". The credited damage is summed per caster in the footer. Negative support
+events (known WCL quirk with stacked enemies) are kept as-is. Recasts get a yellow **extended** badge and a yellow row tint, and a red
 **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
 `--prescience-duration`) is only a fallback for missing removal events.
+
+### Saved reports
+
+The report picker is backed by `localStorage` (`amalyzer.saved-reports`). Every
+successful Load/Analyze remembers the URL and title (deduplicated by report
+code, newest first, max 20). Selecting one fills the report field and triggers
+the normal load if you are connected.
 
 ### Multiple Aug Evokers
 

@@ -103,19 +103,8 @@ export function isAnalyzableFight(fight: ReportFight): boolean {
  * Its value is `{ data: { total, entries: [{ id, total }] } }` — see
  * `DamageTableJson`.
  */
-export type DamageWindowRange = {
-  startTime: number;
-  endTime: number;
-  /**
-   * Optional WCL support-damage query for the buff applied in this window.
-   * WCL reattributes buff-gained damage to the Aug evoker; querying the buff's
-   * ability id for that evoker returns the credited damage.
-   */
-  support?: { abilityId: number; sourceId?: number; targetId?: number };
-};
-
 export function buildDamageWindowsQuery(
-  ranges: DamageWindowRange[],
+  ranges: { startTime: number; endTime: number }[],
   hasFilter: boolean,
 ): string {
   const aliases = ranges
@@ -127,21 +116,7 @@ export function buildDamageWindowsQuery(
           endTime: ${Math.round(range.endTime)}
           dataType: DamageDone
           ${hasFilter ? 'filterExpression: $filter' : ''}
-        )${range.support ? `
-        s${index}: table(
-          fightIDs: [$fightId]
-          startTime: ${Math.round(range.startTime)}
-          endTime: ${Math.round(range.endTime)}
-          dataType: DamageDone
-          abilityID: ${range.support.abilityId}
-          viewBy: Ability
-          ${range.support.sourceId != null ? `sourceID: ${range.support.sourceId}` : ''}
-          ${
-            range.support.targetId != null
-              ? `filterExpression: "supportedActor.id = ${range.support.targetId}"`
-              : ''
-          }
-        )` : ''}`,
+        )`,
     )
     .join('\n');
 
@@ -271,6 +246,10 @@ export const PRESCIENCE_CASTS_QUERY = /* GraphQL */ `
 
 export type WclCastEvent = {
   timestamp: number;
+  /** Support events: the player whose damage was reattributed. */
+  supportID?: number;
+  /** Support events: the reattributed damage amount. */
+  amount?: number;
   type?: string;
   sourceID?: number;
   targetID?: number;
@@ -339,6 +318,40 @@ export const SHIFTING_SANDS_BUFFS_QUERY = /* GraphQL */ `
           endTime: $endTime
           abilityID: ${SHIFTING_SANDS_BUFF_ID}
           limit: 1000
+        ) {
+          data
+          nextPageTimestamp
+        }
+      }
+    }
+  }
+`;
+
+/**
+ * WCL support events for an Augmentation buff (e.g. Prescience 410089 or
+ * Shifting Sands 413984). Support events are damage events whose `amount` is
+ * reattributed from the buffed player to the Aug; `supportID` is the buffed
+ * actor id, `sourceID` the Aug.
+ */
+export const SUPPORT_DAMAGE_QUERY = /* GraphQL */ `
+  query SupportDamage(
+    $code: String!
+    $fightId: Int!
+    $startTime: Float!
+    $endTime: Float!
+    $abilityID: Float!
+    $sourceID: Int
+  ) {
+    reportData {
+      report(code: $code) {
+        events(
+          dataType: DamageDone
+          fightIDs: [$fightId]
+          startTime: $startTime
+          endTime: $endTime
+          abilityID: $abilityID
+          sourceID: $sourceID
+          limit: 10000
         ) {
           data
           nextPageTimestamp

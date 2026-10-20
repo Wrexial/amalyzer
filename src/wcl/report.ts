@@ -9,6 +9,7 @@ import {
   PRESCIENCE_CASTS_QUERY,
   SHIFTING_SANDS_BUFF_ID,
   SHIFTING_SANDS_BUFFS_QUERY,
+  SUPPORT_DAMAGE_QUERY,
   REPORT_META_QUERY,
   type DamageWindowsResponse,
   type PrescienceBuffsResponse,
@@ -16,6 +17,7 @@ import {
   type ReportMetaResponse,
 } from './queries.ts';
 import type { PrescienceBuffEvent, PrescienceCast } from './prescience.ts';
+import type { SupportDamageEvent } from './support.ts';
 import type {
   DamageTableEntry,
   ReportFight,
@@ -117,18 +119,9 @@ export async function fetchDamageWindows(
     batch.forEach((window, index) => {
       const table = report[`w${index}`];
       const parsed = table?.data ?? table;
-      const supportTable = report[`s${index}`];
-      const supportParsed = supportTable?.data ?? supportTable;
-      const supportDamage = supportParsed
-        ? typeof supportParsed.total === 'number'
-          ? supportParsed.total
-          : (supportParsed.entries ?? []).reduce((sum, entry) => sum + (entry.total ?? 0), 0)
-        : undefined;
-
       results.push({
         windowIndex: window.index,
         entries: parsed?.entries ?? [],
-        ...(supportDamage != null ? { supportDamage } : {}),
       });
     });
   }
@@ -230,6 +223,53 @@ async function fetchBuffEvents(
   }
 
   return buffs;
+}
+
+/**
+ * Fetches WCL support damage for one Aug buff in a fight. Each event carries
+ * `supportID` (the buffed player) and `amount` (damage reattributed to the Aug).
+ */
+export async function fetchSupportDamageEvents(
+  client: WCLClient,
+  code: string,
+  fight: ReportFight,
+  abilityId: number,
+  sourceId?: number,
+): Promise<SupportDamageEvent[]> {
+  const events: SupportDamageEvent[] = [];
+  let startTime = fight.startTime;
+
+  for (let page = 0; page < 50; page += 1) {
+    const data = await client.request<PrescienceCastsResponse>(SUPPORT_DAMAGE_QUERY, {
+      code,
+      fightId: fight.id,
+      startTime,
+      endTime: fight.endTime,
+      abilityID: abilityId,
+      ...(sourceId != null ? { sourceID: sourceId } : {}),
+    });
+
+    const batch = data.reportData.report?.events;
+    if (!batch?.data) break;
+
+    batch.data.forEach((event) => {
+      if (typeof event.timestamp !== 'number') return;
+      if (typeof event.supportID !== 'number') return;
+      if (typeof event.amount !== 'number') return;
+
+      events.push({
+        timestamp: event.timestamp,
+        supportID: event.supportID,
+        amount: event.amount,
+        ...(event.sourceID ? { sourceID: event.sourceID } : {}),
+      });
+    });
+
+    if (batch.nextPageTimestamp == null || batch.nextPageTimestamp <= startTime) break;
+    startTime = batch.nextPageTimestamp;
+  }
+
+  return events;
 }
 
 /** Prescience aura events, used for recipients/durations and back-checking. */
