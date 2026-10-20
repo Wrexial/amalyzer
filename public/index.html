@@ -818,6 +818,9 @@
           if (window.castEnemyTarget) row.classList.add('enemy-cast-row');
           row.append(timeCell);
 
+          const buffedKeys = new Set((window.buffed ?? []).map((entry) => entry.key));
+          const targetKey = window.castTarget?.key;
+
           const cell = el('td');
           const targets = el('div', 'targets');
 
