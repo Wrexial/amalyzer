@@ -293,3 +293,32 @@ export const PRESCIENCE_BUFFS_QUERY = /* GraphQL */ `
 `;
 
 export type PrescienceBuffsResponse = PrescienceCastsResponse;
+
+/** Shifting Sands: the Augmentation mastery aura granted by empower spells. */
+export const SHIFTING_SANDS_BUFF_ID = 413984;
+
+/** Shifting Sands aura events (apply/refresh/remove) for one fight. */
+export const SHIFTING_SANDS_BUFFS_QUERY = /* GraphQL */ `
+  query ShiftingSandsBuffs(
+    $code: String!
+    $fightId: Int!
+    $startTime: Float!
+    $endTime: Float!
+  ) {
+    reportData {
+      report(code: $code) {
+        events(
+          dataType: Buffs
+          fightIDs: [$fightId]
+          startTime: $startTime
+          endTime: $endTime
+          abilityID: ${SHIFTING_SANDS_BUFF_ID}
+          limit: 1000
+        ) {
+          data
+          nextPageTimestamp
+        }
+      }
+    }
+  }
+`;

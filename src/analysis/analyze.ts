@@ -9,6 +9,7 @@ import {
   fetchDamageWindows,
   fetchPrescienceBuffEvents,
   fetchPrescienceCasts,
+  fetchShiftingSandsBuffEvents,
   fetchReportMeta,
   isAugmentationEvoker,
   parseReportInput,
@@ -18,7 +19,7 @@ import { buildPrescienceApplications, matchPrescienceRecipients } from '../wcl/p
 import type { ReportFight, TimeWindow, WindowDamage } from '../wcl/types.ts';
 
 /** How the analysis slices a fight into damage windows. */
-export type WindowMode = 'prescience-buff' | 'fixed';
+export type WindowMode = 'prescience-buff' | 'shifting-sands' | 'fixed';
 
 export type AnalyzeOptions = {
   /** Fight id, comma-separated ids, `last`, or `all`. Defaults to the last kill. */
@@ -26,11 +27,14 @@ export type AnalyzeOptions = {
   encounterID?: number;
   /**
    * `prescience-buff` (default): one window per cast, lasting that aura's actual
-   * duration. `fixed`: the old clock-based grid.
+   * duration. `shifting-sands`: one window per Shifting Sands application.
+   * `fixed`: the old clock-based grid.
    */
   windowMode?: WindowMode;
-  /** Fallback buff length in ms, used only when the log has no removal event. */
+  /** Prescience fallback length in ms, used when the log has no removal event. */
   prescienceDurationMs?: number;
+  /** Shifting Sands fallback length in ms. Default 10400 (10s + 4% mastery). */
+  shiftingSandsDurationMs?: number;
   windowMs?: number;
   offsetMs?: number;
   slots?: number;
@@ -104,11 +108,12 @@ export type AnalyzeFight = Pick<
 
 export type AnalyzeResult = {
   report: { code: string; title: string; region: string; zone: string | null };
-  /** `fixed` also means "requested Prescience windows but found no casts". */
+  /** `fixed` also means "requested aura windows but found no events". */
   windowMode: WindowMode;
-  /** True when Prescience windows were requested but no casts were found. */
+  /** True when aura windows were requested but no events were found. */
   windowModeFallback: boolean;
   prescienceDurationMs?: number;
+  shiftingSandsDurationMs?: number;
   fights: AnalyzeFight[];
   windows: AnalyzeWindow[];
   rateLimit: RateLimitInfo;
@@ -152,8 +157,12 @@ export async function analyzeReport(
   const { code, fightId: urlFightId } = parseReportInput(input);
   if (!code) throw new Error('Could not find a report code in that input');
 
-  const windowMode: WindowMode = options.windowMode === 'fixed' ? 'fixed' : 'prescience-buff';
+  const windowMode: WindowMode =
+    options.windowMode === 'fixed' || options.windowMode === 'shifting-sands'
+      ? options.windowMode
+      : 'prescience-buff';
   const prescienceDurationMs = options.prescienceDurationMs ?? 18_000;
+  const shiftingSandsDurationMs = options.shiftingSandsDurationMs ?? 10_400;
   const windowMs = options.windowMs ?? 27_000;
   const offsetMs = options.offsetMs ?? 4000;
   const slots = options.slots ?? 4;
@@ -186,6 +195,76 @@ export async function analyzeReport(
 
   if (windowMode !== 'fixed') {
     for (const fight of fights) {
+      if (windowMode === 'shifting-sands') {
+        const duration = fight.endTime - fight.startTime;
+        const buffEvents = await fetchShiftingSandsBuffEvents(client, code, fight);
+        const applications = buildPrescienceApplications(
+          buffEvents.filter(
+            (event) => event.targetID != null && lookup.get(event.targetID)?.isPlayer,
+          ),
+          fight.endTime,
+          shiftingSandsDurationMs,
+        );
+        castsFound += applications.length;
+
+        const windows = buildPrescienceWindows(
+          applications.map((application) => ({
+            timestamp: application.timestamp,
+            endTimestamp: application.endTimestamp,
+          })),
+          fight.startTime,
+          duration,
+          shiftingSandsDurationMs,
+        );
+        castsByFightId.set(fight.id, windows);
+
+        const targetByStart = new Map<number, { key: string; name: string }>();
+        const extendedByStart = new Set<number>();
+        for (const application of applications) {
+          const actor = lookup.get(application.targetID);
+          if (!actor) continue;
+
+          const startTime = Math.round(application.timestamp) - fight.startTime;
+          if (!targetByStart.has(startTime)) {
+            targetByStart.set(startTime, { key: actor.key, name: actor.name });
+          }
+          if (application.extended) extendedByStart.add(startTime);
+        }
+
+        castInfoByFightId.set(
+          fight.id,
+          windows.map((window) => ({
+            startTime: window.startTime,
+            durationMs: window.endTime - window.startTime + 1,
+            ...(targetByStart.has(window.startTime)
+              ? { target: targetByStart.get(window.startTime)! }
+              : {}),
+            ...(extendedByStart.has(window.startTime) ? { extended: true } : {}),
+          })),
+        );
+
+        buffedByFightId.set(
+          fight.id,
+          windows.map((window) => {
+            const active = new Map<string, { key: string; name: string }>();
+            for (const application of applications) {
+              const start = application.timestamp - fight.startTime;
+              const end = application.endTimestamp - fight.startTime;
+              if (start > window.startTime || window.startTime >= end) continue;
+
+              const actor = lookup.get(application.targetID);
+              if (actor) active.set(actor.key, { key: actor.key, name: actor.name });
+            }
+
+            const currentTarget = targetByStart.get(window.startTime);
+            if (currentTarget) active.set(currentTarget.key, currentTarget);
+            return [...active.values()];
+          }),
+        );
+
+        continue;
+      }
+
       const [rawCasts, buffEvents] = await Promise.all([
         fetchPrescienceCasts(client, code, fight),
         fetchPrescienceBuffEvents(client, code, fight),
@@ -303,9 +382,11 @@ export async function analyzeReport(
 
   if (!perFight.length) {
     throw new Error(
-      effectiveMode !== 'fixed'
-        ? 'No Prescience casts found in the selected fights'
-        : 'Fights are too short for the configured window offset',
+      effectiveMode === 'fixed'
+        ? 'Fights are too short for the configured window offset'
+        : windowMode === 'shifting-sands'
+          ? 'No Shifting Sands applications found in the selected fights'
+          : 'No Prescience casts found in the selected fights',
     );
   }
 
@@ -361,7 +442,8 @@ export async function analyzeReport(
     },
     windowMode: effectiveMode,
     windowModeFallback: windowMode !== 'fixed' && effectiveMode === 'fixed',
-    ...(effectiveMode !== 'fixed' ? { prescienceDurationMs } : {}),
+    ...(effectiveMode === 'prescience-buff' ? { prescienceDurationMs } : {}),
+    ...(effectiveMode === 'shifting-sands' ? { shiftingSandsDurationMs } : {}),
     fights: fights.map((fight) => ({
       id: fight.id,
       encounterID: fight.encounterID,

@@ -138,11 +138,21 @@ export async function handleApi(request: ApiRequest): Promise<ApiResponse> {
           : {}),
         ...(body.windowMode === 'fixed'
           ? { windowMode: 'fixed' as const }
-          : body.windowMode === 'prescience-buff' || body.windowMode === 'prescience'
-            ? { windowMode: 'prescience-buff' as const }
-            : {}),
+          : body.windowMode === 'shifting-sands'
+            ? { windowMode: 'shifting-sands' as const }
+            : body.windowMode === 'prescience-buff' || body.windowMode === 'prescience'
+              ? { windowMode: 'prescience-buff' as const }
+              : {}),
         ...(asOptionalNumber(body.prescienceDurationMs, 'prescienceDurationMs') !== undefined
           ? { prescienceDurationMs: asOptionalNumber(body.prescienceDurationMs, 'prescienceDurationMs')! }
+          : {}),
+        ...(asOptionalNumber(body.shiftingSandsDurationMs, 'shiftingSandsDurationMs') !== undefined
+          ? {
+              shiftingSandsDurationMs: asOptionalNumber(
+                body.shiftingSandsDurationMs,
+                'shiftingSandsDurationMs',
+              )!,
+            }
           : {}),
         ...(body.excludeAugmentation === true || body.excludeAugmentation === 'true'
           ? { excludeAugmentation: true }

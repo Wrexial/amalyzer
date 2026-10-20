@@ -7,6 +7,8 @@ import {
   PRESCIENCE_BUFFS_QUERY,
   PRESCIENCE_CAST_ID,
   PRESCIENCE_CASTS_QUERY,
+  SHIFTING_SANDS_BUFF_ID,
+  SHIFTING_SANDS_BUFFS_QUERY,
   REPORT_META_QUERY,
   type DamageWindowsResponse,
   type PrescienceBuffsResponse,
@@ -169,21 +171,21 @@ export async function fetchPrescienceCasts(
 }
 
 /**
- * Report-relative timestamps and targets of every Prescience aura event
- * (`applybuff`, `refreshbuff`, `removebuff`) in one fight. Used to resolve who
- * actually received the buff when the cast was made with an enemy target, and
- * to track how long the aura lasted.
+ * Generic aura-event fetch for a single ability: report-relative timestamps,
+ * event type, caster and target. Paginates until WCL stops handing out pages.
  */
-export async function fetchPrescienceBuffEvents(
+async function fetchBuffEvents(
   client: WCLClient,
   code: string,
   fight: ReportFight,
+  query: string,
+  abilityId: number,
 ): Promise<PrescienceBuffEvent[]> {
   const buffs: PrescienceBuffEvent[] = [];
   let startTime = fight.startTime;
 
   for (let page = 0; page < 10; page += 1) {
-    const data = await client.request<PrescienceBuffsResponse>(PRESCIENCE_BUFFS_QUERY, {
+    const data = await client.request<PrescienceBuffsResponse>(query, {
       code,
       fightId: fight.id,
       startTime,
@@ -194,7 +196,7 @@ export async function fetchPrescienceBuffEvents(
     if (!events?.data) break;
 
     events.data.forEach((event) => {
-      if (event.abilityGameID != null && event.abilityGameID !== PRESCIENCE_BUFF_ID) return;
+      if (event.abilityGameID != null && event.abilityGameID !== abilityId) return;
       if (
         event.type &&
         event.type !== 'applybuff' &&
@@ -219,6 +221,30 @@ export async function fetchPrescienceBuffEvents(
   }
 
   return buffs;
+}
+
+/** Prescience aura events, used for recipients/durations and back-checking. */
+export function fetchPrescienceBuffEvents(
+  client: WCLClient,
+  code: string,
+  fight: ReportFight,
+): Promise<PrescienceBuffEvent[]> {
+  return fetchBuffEvents(client, code, fight, PRESCIENCE_BUFFS_QUERY, PRESCIENCE_BUFF_ID);
+}
+
+/** Shifting Sands aura events (Augmentation mastery, 413984). */
+export function fetchShiftingSandsBuffEvents(
+  client: WCLClient,
+  code: string,
+  fight: ReportFight,
+): Promise<PrescienceBuffEvent[]> {
+  return fetchBuffEvents(
+    client,
+    code,
+    fight,
+    SHIFTING_SANDS_BUFFS_QUERY,
+    SHIFTING_SANDS_BUFF_ID,
+  );
 }
 
 export type ActorLookup = {

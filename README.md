@@ -63,7 +63,7 @@ invocations. No secret is ever stored server-side.
 |---|---|---|
 | `POST /api/login` | `{clientId, clientSecret}` | validates the pair against WCL |
 | `POST /api/meta` | `{report}` | fights + durations; requires credential headers |
-| `POST /api/damage` | `{report, fight, windowMode, prescienceDurationMs, slots, excludeAugmentation, ...}` | `AnalyzeResult`; requires credential headers |
+| `POST /api/damage` | `{report, fight, windowMode, prescienceDurationMs, shiftingSandsDurationMs, slots, ...}` | `AnalyzeResult`; requires credential headers |
 
 ```bash
 npx netlify dev                 # http://localhost:8888, functions included
@@ -213,20 +213,33 @@ How it is built:
 3. There is no start offset: the first window begins at the first cast.
 
 The first column is two lines: `#N - start - end - duration` (e.g.
-`#2 - 0:09 - 0:28 - 18.4s`) and the Prescience target's name, class-coloured,
-with the class icon. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+`#2 - 0:09 - 0:28 - 18.4s`) and the buff target's name, class-coloured, with
+the class icon. Recasts get a yellow **extended** badge and a yellow row tint, and a red
 **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
 `--prescience-duration`) is only a fallback for missing removal events.
+
+### Shifting Sands
+
+`windowMode: 'shifting-sands'` (UI "Shifting Sands windows") applies the same
+analysis to the Augmentation mastery aura (413984) instead of Prescience. There
+are no cast events for it, so each **aura application** is a window:
+`applybuff`/`refreshbuff` starts it and `removebuff` ends it, with refreshes
+splitting the previous window just like Prescience. The recipient is the buff
+target, so highlighting, `extended` badges, the buffed back-check and the
+`Buffed vs Best unbuffed` comparison all work unchanged. Pet applications are
+filtered out. The fallback duration is `shiftingSandsDurationMs` (default
+10 400 ms; `--shifting-sands-duration`), again only for missing removals.
 
 The old clock grid is still available as `windowMode: 'fixed'`: 27 000 ms
 windows, 4000 ms offset, anchored to fight start (`buildWindows()` reproduces
 the original `generateTimeRanges()` at `sizeMs: 6000`). Pass
 `--window-mode fixed` (or just `--window`/`--offset`).
 
-If no casts are found in any selected fight (no Augmentation Evoker was logged),
-the analysis falls back to the fixed grid and reports `windowModeFallback`.
+If no aura events are found in any selected fight (no Augmentation Evoker was
+logged), the analysis falls back to the fixed grid and reports
+`windowModeFallback`.
 
 Windows for different fights no longer share timestamps, so each fight gets its
 own list; `aggregateDamage()` still merges by index. `toReportTime()` shifts the

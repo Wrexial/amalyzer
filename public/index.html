@@ -334,7 +334,7 @@
   <body>
     <div class="wrap">
       <h1>Ama<span>lyzer</span></h1>
-      <p class="sub">Windowed damage from a Warcraft Logs report — who to buff, per 27-second window.</p>
+      <p class="sub">Windowed damage from a Warcraft Logs report — who to buff, per Prescience or Shifting Sands window.</p>
 
       <div id="status"></div>
 
@@ -381,6 +381,7 @@
             <label for="windowMode">Window source</label>
             <select id="windowMode">
               <option value="prescience-buff" selected>Prescience buff window</option>
+              <option value="shifting-sands">Shifting Sands windows</option>
               <option value="fixed">Fixed interval</option>
             </select>
           </div>
@@ -409,11 +410,11 @@
         </div>
         <p class="hint">
           <code>Load fights</code> fills the fight list from the report. Each window is a Prescience
-          cast plus the aura's measured lifetime (the fallback 18s is only used when the log is
-          missing the removal), so the damage shown is what happened while that person was buffed.
-          Filtering uses the default ability filter (drops non-scaling trinket damage); leave it
-          alone unless you know why. After analysing you can switch between DPS and raw damage, hide
-          Augmentation Evokers, or compare buffed vs unbuffed targets without re-querying.
+          cast (or Shifting Sands application) plus the aura's measured lifetime; the fallback value
+          is only used when the log is missing the removal. Filtering uses the default ability filter
+          (drops non-scaling trinket damage); leave it alone unless you know why. After analysing you
+          can switch between DPS and raw damage, hide Augmentation Evokers, or compare buffed vs
+          unbuffed targets without re-querying.
         </p>
       </section>
 
@@ -446,7 +447,14 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const state = { authenticated: false, fights: [], result: null, metric: 'average' };
+      const state = {
+        authenticated: false,
+        fights: [],
+        result: null,
+        metric: 'average',
+        windowMode: 'prescience-buff',
+        fallbackByMode: { 'prescience-buff': 18_000, 'shifting-sands': 10_400 },
+      };
       const STORAGE_KEY = 'amalyzer.wcl-credentials';
 
       function readCredentials() {
@@ -516,7 +524,11 @@
         (entry?.specs || []).some((spec) => /^augmentation$/i.test(spec));
 
       const windowModeLabel = (mode) =>
-        mode === 'prescience-buff' ? 'Prescience buff windows' : 'windows';
+        mode === 'prescience-buff'
+          ? 'Prescience buff windows'
+          : mode === 'shifting-sands'
+            ? 'Shifting Sands windows'
+            : 'windows';
 
       /** Value for the currently selected metric. */
       const metricValue = (entry) =>
@@ -677,7 +689,9 @@
             report,
             fight: $('fight').value,
             windowMode: $('windowMode').value,
-            prescienceDurationMs: Number($('prescienceMs').value),
+            ...($('windowMode').value === 'shifting-sands'
+              ? { shiftingSandsDurationMs: Number($('prescienceMs').value) }
+              : { prescienceDurationMs: Number($('prescienceMs').value) }),
             windowMs: Number($('windowMs').value),
             offsetMs: Number($('offsetMs').value),
             slots: Number($('slots').value),
@@ -701,15 +715,24 @@
         });
       });
 
-      $('windowMode').addEventListener('change', syncWindowMode);
+      $('windowMode').addEventListener('change', () => {
+        const previous = state.windowMode;
+        state.fallbackByMode[previous] =
+          Number($('prescienceMs').value) || state.fallbackByMode[previous];
+        state.windowMode = $('windowMode').value;
+        syncWindowMode();
+      });
 
       function syncWindowMode() {
         const mode = $('windowMode').value;
-        // The buff duration is also used for back-checking who is already
-        // buffed in interval mode, so it stays editable in both cast modes.
         $('prescienceMs').disabled = mode === 'fixed';
         $('windowMs').disabled = mode !== 'fixed';
         $('offsetMs').disabled = mode !== 'fixed';
+
+        const fallback = state.fallbackByMode[mode];
+        if (mode !== 'fixed' && fallback != null) {
+          $('prescienceMs').value = String(fallback);
+        }
       }
 
       $('hideAug').addEventListener('change', () => {
@@ -729,7 +752,7 @@
           `${result.report.code} · ${result.report.region}` +
           (result.report.zone ? ` · ${result.report.zone}` : '') +
           ` · ${result.windows.length} ${windowModeLabel(result.windowMode)}` +
-          (result.windowModeFallback ? ' · no Prescience casts, fixed fallback' : '');
+          (result.windowModeFallback ? ' · no aura events, fixed fallback' : '');
 
         const fights = $('fights');
         fights.replaceChildren();
@@ -740,8 +763,11 @@
         const table = el('table');
         const head = el('thead');
         const headRow = el('tr');
+        const auraName = result.windowMode === 'shifting-sands' ? 'Shifting Sands' : 'Prescience';
         const windowHeading =
-          result.windowMode === 'fixed' ? 'Window' : 'Prescience (# - start - end - duration)';
+          result.windowMode === 'fixed'
+            ? 'Window'
+            : `${auraName} (# - start - end - duration)`;
         [windowHeading, state.metric === 'average' ? 'Targets (damage)' : 'Targets (DPS)'].forEach(
           (title) => headRow.append(el('th', '', title)),
         );
@@ -819,7 +845,7 @@
                 const targetClass = window.entries.find((entry) => entry.key === target.key)?.class;
                 const slug = classSlug(targetClass);
                 if (slug) line.classList.add(`class-${slug}`);
-                line.title = `Prescience target: ${target.name}`;
+                line.title = `${auraName} target: ${target.name}`;
                 const icon = classIcon(targetClass);
                 if (icon) line.append(icon);
                 line.append(el('span', 'nm', target.name));
@@ -833,14 +859,14 @@
               }
               if (castInfo?.extended) {
                 const mark = el('span', 'extended-mark', 'extended');
-                mark.title = 'Recast: extended an existing Prescience on this target';
+                mark.title = `Recast: extended an existing ${auraName} on this target`;
                 line.append(mark);
               }
               timeCell.append(line);
             }
           }
 
-          if (window.castTarget) timeCell.title = `Prescience cast on ${window.castTarget.name}`;
+          if (window.castTarget) timeCell.title = `${auraName} target: ${window.castTarget.name}`;
           if (window.castEnemyTarget) row.classList.add('enemy-cast-row');
           if (castInfo?.extended) row.classList.add('extended-row');
           row.append(timeCell);
@@ -872,7 +898,7 @@
                 (isCastTarget ? ' prescience' : '') +
                 (isBuffed ? ' buffed' : ''),
             );
-            if (isCastTarget) target.title = 'Prescience cast target';
+            if (isCastTarget) target.title = `${auraName} target`;
             else if (!isPick) target.title = 'Not selected';
 
             const top = el('div', 'target-top');
@@ -953,14 +979,14 @@
         const { limit, points } = result.rateLimit || {};
         const footItems = [
           el('span', '', limit && points != null ? `Rate limit: ${points}/${limit} points` : ''),
-          el('span', '', `Sorted by ${state.metric === 'average' ? 'damage' : 'DPS'} in each ${result.windowMode === 'fixed' ? 'window' : 'Prescience window'}; * = forced priority.`),
+          el('span', '', `Sorted by ${state.metric === 'average' ? 'damage' : 'DPS'} in each ${result.windowMode === 'fixed' ? 'window' : `${auraName} window`}; * = forced priority.`),
           el('span', '', 'Scroll a row to see every DPS character; faded cards are not picked.'),
           el(
             'span',
             '',
             result.windowMode === 'fixed'
               ? ''
-              : 'Highlighted = Prescience target; buffed = already had Prescience at cast time; no target = cast was made on a hostile/NPC, buff credited to the aura recipient; extended = recast that extended an existing Prescience.',
+              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}.`,
           ),
         ];
 
