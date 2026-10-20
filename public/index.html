@@ -187,6 +187,29 @@
       }
       label.check input { width: auto; margin: 0; accent-color: var(--accent); }
 
+      .view-controls { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+
+      .seg {
+        display: inline-flex;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .seg button {
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+      .seg button.active {
+        background: color-mix(in srgb, var(--accent) 18%, transparent);
+        color: var(--accent);
+      }
+
       .target-dps { font-variant-numeric: tabular-nums; color: var(--muted); }
 
       .bar { height: 4px; border-radius: 3px; background: #1c2330; margin-top: 5px; overflow: hidden; }
@@ -264,12 +287,13 @@
         <div class="row" style="margin-top: 16px">
           <button id="analyze">Analyze</button>
           <button id="load" class="ghost">Load fights</button>
-          <label class="check" for="hideAug"><input id="hideAug" type="checkbox" /> Hide Augmentation Evokers</label>
           <button id="logout" class="ghost" style="margin-left: auto">Disconnect</button>
         </div>
         <p class="hint">
           <code>Load fights</code> fills the fight list from the report. Filtering uses the default
           ability filter (drops non-scaling trinket damage); leave it alone unless you know why.
+          After analysing you can switch between DPS and raw damage, or hide Augmentation Evokers
+          without re-querying.
         </p>
       </section>
 
@@ -278,6 +302,15 @@
           <div>
             <div class="report-title" id="report-title"></div>
             <div class="report-meta" id="report-meta"></div>
+          </div>
+          <div class="view-controls hidden" id="view-controls">
+            <div class="seg" role="group" aria-label="Metric">
+              <button type="button" data-metric="dps" class="active">DPS</button>
+              <button type="button" data-metric="average">Damage</button>
+            </div>
+            <label class="check" for="hideAug">
+              <input id="hideAug" type="checkbox" /> Hide Augmentation Evokers
+            </label>
           </div>
         </div>
         <div id="fights" style="margin-top: 12px"></div>
@@ -288,7 +321,7 @@
 
     <script>
       const $ = (id) => document.getElementById(id);
-      const state = { authenticated: false, fights: [] };
+      const state = { authenticated: false, fights: [], result: null, metric: 'dps' };
       const STORAGE_KEY = 'amalyzer.wcl-credentials';
 
       function readCredentials() {
@@ -353,6 +386,27 @@
         }
         return current;
       };
+
+      const isAugEvoker = (entry) =>
+        /^evoker$/i.test(entry?.class || '') &&
+        (entry?.specs || []).some((spec) => /^augmentation$/i.test(spec));
+
+      /** Value for the currently selected metric. */
+      const metricValue = (entry) =>
+        state.metric === 'average' ? entry.average ?? 0 : entry.dps ?? 0;
+
+      /**
+       * Post-analysis filter: hides Augmentation Evokers and refills the slots
+       * from the same window's entries instead of re-querying WCL.
+       */
+      function displayedAssignments(window) {
+        if (!$('hideAug').checked) return window.assignments;
+
+        return window.entries
+          .filter((entry) => !isAugEvoker(entry))
+          .slice(0, window.assignments.length)
+          .map((entry) => ({ ...entry, priority: false }));
+      }
 
       function setStatus(message, kind = '') {
         const el = $('status');
@@ -447,6 +501,8 @@
 
       /** Shows the loaded fights right away, before an analysis has run. */
       function renderFightList(meta) {
+        state.result = null;
+        $('view-controls').classList.add('hidden');
         $('result-panel').classList.remove('hidden');
         $('report-title').textContent = meta.title;
         $('report-meta').textContent =
@@ -465,8 +521,7 @@
         $('foot').replaceChildren();
       }
 
-      $('analyze').addEventListener('click', async () => {
-        const report = $('report').value.trim();
+      $('analyze').addEventListener('click', async () => {        const report = $('report').value.trim();
         if (!report) return setStatus('Paste a report URL first.', 'error');
 
         $('analyze').disabled = true;
@@ -478,7 +533,6 @@
             windowMs: Number($('windowMs').value),
             offsetMs: Number($('offsetMs').value),
             slots: Number($('slots').value),
-            excludeAugmentation: $('hideAug').checked,
           });
           render(result);
           setStatus('', '');
@@ -489,7 +543,23 @@
         }
       });
 
+      document.querySelectorAll('[data-metric]').forEach((button) => {
+        button.addEventListener('click', () => {
+          state.metric = button.dataset.metric;
+          document
+            .querySelectorAll('[data-metric]')
+            .forEach((other) => other.classList.toggle('active', other === button));
+          if (state.result) render(state.result);
+        });
+      });
+
+      $('hideAug').addEventListener('change', () => {
+        if (state.result) render(state.result);
+      });
+
       function render(result) {
+        state.result = result;
+        $('view-controls').classList.remove('hidden');
         $('result-panel').classList.remove('hidden');
         $('report-title').textContent = result.report.title;
         $('report-meta').textContent =
@@ -506,7 +576,9 @@
         const table = el('table');
         const head = el('thead');
         const headRow = el('tr');
-        ['Window', 'Targets (expected DPS)'].forEach((title) => headRow.append(el('th', '', title)));
+        ['Window', state.metric === 'average' ? 'Targets (damage)' : 'Targets (DPS)'].forEach((title) =>
+          headRow.append(el('th', '', title)),
+        );
         head.append(headRow);
         table.append(head);
 
@@ -549,9 +621,10 @@
 
           const cell = el('td');
           const targets = el('div', 'targets');
-          const max = Math.max(...window.assignments.map((slot) => slot.dps), 1);
+          const assignments = displayedAssignments(window);
+          const max = Math.max(...assignments.map(metricValue), 1);
 
-          window.assignments.forEach((slot) => {
+          assignments.forEach((slot) => {
             const target = el('div', 'target' + (slot.priority ? ' prio' : ''));
             const top = el('div', 'target-top');
             const slug = classSlug(slot.class);
@@ -561,10 +634,10 @@
             if (icon) name.append(icon);
             name.append(el('span', 'nm', slot.name));
             top.append(name);
-            top.append(el('span', 'target-dps', fmt(slot.dps)));
+            top.append(el('span', 'target-dps', fmt(metricValue(slot))));
             const bar = el('div', 'bar');
             const fill = el('i');
-            fill.style.width = `${Math.round((slot.dps / max) * 100)}%`;
+            fill.style.width = `${Math.round((metricValue(slot) / max) * 100)}%`;
             bar.append(fill);
             target.append(top, bar);
             targets.append(target);

@@ -6,6 +6,8 @@ export type AssignmentSlot = {
   name: string;
   /** Class name for colour coding, when known. */
   class?: string;
+  /** Spec names from playerDetails, used for client-side filtering. */
+  specs?: string[];
   average: number;
   priority: boolean;
 };
@@ -57,6 +59,7 @@ export function buildAssignments(
         key,
         name: entry?.actor.name ?? key.split('@')[0] ?? key,
         ...(entry?.actor.class ? { class: entry.actor.class } : {}),
+        ...(entry?.actor.specs?.length ? { specs: entry.actor.specs } : {}),
         average: entry?.average ?? 0,
         priority: true,
       });
@@ -71,6 +74,7 @@ export function buildAssignments(
         key: entry.actor.key,
         name: entry.actor.name,
         ...(entry.actor.class ? { class: entry.actor.class } : {}),
+        ...(entry.actor.specs?.length ? { specs: entry.actor.specs } : {}),
         average: entry.average,
         priority: false,
       });

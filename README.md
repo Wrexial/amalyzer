@@ -223,11 +223,15 @@ Player names are coloured with the WoW class colour and prefixed with the class
 icon from Wowhead's icon CDN (`classicon_<class>.jpg`). Icons fail soft: the
 image removes itself on error and the coloured name remains.
 
-The **Hide Augmentation Evokers** checkbox sends `excludeAugmentation` to the
-API. Players whose `playerDetails` entry is Evoker with an Augmentation spec are
-dropped from the aggregated entries *before* `buildAssignments()` runs, so they
-neither appear nor consume a slot. The CLI equivalent is
-`--exclude-augmentation`.
+The **DPS / Damage** segmented control switches the table between `dps`
+(normalised by window length) and `average` (raw expected damage inside the
+window). Both are already in `AnalyzeResult`, so toggling never re-queries WCL.
+
+The **Hide Augmentation Evokers** checkbox is applied after analysis too: the
+client-side filter drops those entries from the rendered result and refills
+each window's slots from the remaining entries. Scripts can instead exclude them
+during analysis with `excludeAugmentation` / `--exclude-augmentation`, which
+removes them *before* `buildAssignments()` runs.
 
 ## The "best logs" path
 

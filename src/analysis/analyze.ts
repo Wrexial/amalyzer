@@ -34,6 +34,8 @@ export type AnalyzeWindowEntry = {
   server?: string;
   /** Class name, for colour coding and icons in the UI. */
   class?: string;
+  /** Spec names from playerDetails, for client-side filters. */
+  specs?: string[];
   /** Expected damage per second inside this window. */
   dps: number;
   /** Expected damage inside the window (not normalised by duration). */
@@ -46,7 +48,16 @@ export type AnalyzeWindow = {
   startTime: number;
   endTime: number;
   entries: AnalyzeWindowEntry[];
-  assignments: { key: string; name: string; class?: string; dps: number; priority: boolean }[];
+  assignments: {
+    key: string;
+    name: string;
+    class?: string;
+    specs?: string[];
+    dps: number;
+    /** Raw expected damage in the window (pre-DPS). */
+    average: number;
+    priority: boolean;
+  }[];
 };
 
 export type AnalyzeFight = Pick<
@@ -178,6 +189,7 @@ export async function analyzeReport(
         name: entry.actor.name,
         ...(entry.actor.server ? { server: entry.actor.server } : {}),
         ...(entry.actor.class ? { class: entry.actor.class } : {}),
+        ...(entry.actor.specs?.length ? { specs: entry.actor.specs } : {}),
         dps: Math.round(damagePerSecond(entry, row.window)),
         average: entry.average,
         samples: entry.count,
@@ -185,11 +197,14 @@ export async function analyzeReport(
       assignments: (assignmentByIndex.get(row.window.index)?.slots ?? []).map((slot) => {
         const entry = row.entries.find((candidate) => candidate.actor.key === slot.key);
         const className = entry?.actor.class ?? slot.class;
+        const specs = entry?.actor.specs ?? slot.specs;
         return {
           key: slot.key,
           name: slot.name,
           ...(className ? { class: className } : {}),
+          ...(specs?.length ? { specs } : {}),
           dps: entry ? Math.round(damagePerSecond(entry, row.window)) : 0,
+          average: slot.average,
           priority: slot.priority,
         };
       }),
