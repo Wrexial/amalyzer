@@ -211,8 +211,9 @@ How it is built:
    of every pull.
 3. There is no start offset: the first window begins at the first cast.
 
-The first column renders that as `#N - start - end - duration`, e.g.
-`#2 - 0:09 - 0:28 - 18.4s`.
+The first column is two lines: `#N - start - end - duration` (e.g.
+`#2 - 0:09 - 0:28 - 18.4s`) and the Prescience target's name, class-coloured,
+with the class icon.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
 `--prescience-duration`) is only a fallback for missing removal events.
@@ -274,16 +275,18 @@ picks stay purely damage-ordered and the buffed target is easy to spot when
 they fall outside them. Aggregated rows use the longest selected fight's target
 for that cast ordinal. The CLI marks these players with `^`.
 
-When the raw cast target was an enemy/NPC (`castEnemyTarget`), the window cell
-shows an **enemy target** badge and the row is tinted; the buff is still
-attributed to the aura recipient, never the enemy. Casts without a matching
-buff event fall back to the raw target only when that target is a player.
+When the raw cast target was an enemy/NPC (`castEnemyTarget`), the target line
+shows a red **no target** badge next to the credited recipient (or on its own
+when unknown) and the row is tinted; the buff is still attributed to the aura
+recipient, never the enemy. Casts without a matching buff event fall back to the
+raw target only when that target is a player.
 
 Each row is horizontally scrollable and lists **every player**: pet/summon
 damage is credited to its owner via `masterData.actors[].petOwner`, and pet
 buff events are ignored. The selected targets come first, then faded non-picks. A `buffed targets` select filters
 the row to players who already had Prescience when the cast happened (`buffed`,
-back-checked from the aura intervals), or hides them. **Hide previously buffed**
+back-checked from the aura intervals), or hides them. Buffed cards get a purple
+background in addition to their `buffed` badge. **Hide previously buffed**
 keeps the current cast target visible: it is the buff being evaluated, not a
 leftover from an earlier cast. Back-checking uses the resolved recipients, so
 enemy-targeted casts are handled too.
