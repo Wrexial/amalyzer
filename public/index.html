@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Amalyzer — window damage</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --border: #263041;
+        --text: #e6edf3;
+        --muted: #8b949e;
+        --accent: #7dd3fc;
+        --accent-2: #a78bfa;
+        --good: #3fb950;
+        --bad: #f85149;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(1200px 600px at 20% -10%, #1b2433 0%, var(--bg) 55%);
+        color: var(--text);
+        font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px; }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 26px;
+        letter-spacing: -0.02em;
+      }
+      h1 span { color: var(--accent); }
+
+      .sub { color: var(--muted); margin: 0 0 28px; font-size: 14px; }
+
+      .panel {
+        background: color-mix(in srgb, var(--panel) 88%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+      }
+
+      .panel h2 {
+        margin: 0 0 14px;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 5px; }
+
+      input, select, button { font: inherit; }
+
+      input, select {
+        width: 100%;
+        padding: 9px 11px;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #0b0f16;
+        color: var(--text);
+        outline: none;
+      }
+
+      input:focus, select:focus { border-color: var(--accent); }
+
+      .grid { display: grid; gap: 14px; }
+      .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+      .grid.cols-4 { grid-template-columns: repeat(4, 1fr); }
+
+      .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+
+      button {
+        padding: 10px 18px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        background: linear-gradient(135deg, var(--accent), var(--accent-2));
+        color: #07111a;
+        font-weight: 650;
+        cursor: pointer;
+        transition: filter 0.15s, opacity 0.15s;
+      }
+
+      button:hover { filter: brightness(1.08); }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+      button.ghost {
+        background: transparent;
+        border-color: var(--border);
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .hint { color: var(--muted); font-size: 12.5px; margin-top: 10px; }
+      .hint a { color: var(--accent); }
+
+      #status { min-height: 20px; font-size: 13px; margin: 4px 0 16px; }
+      #status.error { color: var(--bad); }
+      #status.ok { color: var(--good); }
+
+      .hidden { display: none !important; }
+
+      .report-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+      .report-title { font-size: 18px; font-weight: 650; }
+      .report-meta { color: var(--muted); font-size: 13px; }
+
+      .chip {
+        display: inline-block;
+        padding: 2px 8px;
+        margin: 0 6px 6px 0;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      table { width: 100%; border-collapse: collapse; }
+
+      th {
+        text-align: left;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--muted);
+        font-weight: 600;
+        padding: 8px 10px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      td { padding: 9px 10px; border-bottom: 1px solid #1c2330; vertical-align: top; }
+
+      tr:last-child td { border-bottom: none; }
+
+      .time { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+
+      .targets { display: flex; gap: 18px; flex-wrap: wrap; }
+
+      .target { min-width: 150px; flex: 1 1 150px; }
+
+      .target-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
+
+      .target-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .target.prio .target-name { color: var(--accent); }
+
+      .target-dps { font-variant-numeric: tabular-nums; color: var(--muted); }
+
+      .bar { height: 4px; border-radius: 3px; background: #1c2330; margin-top: 5px; overflow: hidden; }
+
+      .bar > i {
+        display: block;
+        height: 100%;
+        border-radius: 3px;
+        background: linear-gradient(90deg, var(--accent), var(--accent-2));
+      }
+
+      .foot { color: var(--muted); font-size: 12px; margin-top: 18px; display: flex; gap: 18px; flex-wrap: wrap; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Amal<span>yzer</span></h1>
+      <p class="sub">Windowed damage from a Warcraft Logs report — who to buff, per 6-second window.</p>
+
+      <div id="status"></div>
+
+      <section class="panel" id="login-panel">
+        <h2>Warcraft Logs credentials</h2>
+        <div class="grid cols-2">
+          <div>
+            <label for="clientId">Client ID</label>
+            <input id="clientId" autocomplete="off" spellcheck="false" />
+          </div>
+          <div>
+            <label for="clientSecret">Client secret</label>
+            <input id="clientSecret" type="password" autocomplete="off" />
+          </div>
+        </div>
+        <div class="row" style="margin-top: 14px">
+          <button id="login">Connect</button>
+        </div>
+        <p class="hint">
+          Create a client at
+          <a href="https://www.warcraftlogs.com/api/clients/" target="_blank" rel="noreferrer">warcraftlogs.com/api/clients</a>
+          (any redirect URL). Credentials are kept in this tab's session storage and never on a server.
+        </p>
+      </section>
+
+      <section class="panel hidden" id="query-panel">
+        <h2>Report</h2>
+        <div class="grid">
+          <div>
+            <label for="report">Report URL or code</label>
+            <input id="report" placeholder="https://www.warcraftlogs.com/reports/AbCdEfGh1234" spellcheck="false" />
+          </div>
+        </div>
+
+        <div class="grid cols-4" style="margin-top: 14px">
+          <div>
+            <label for="fight">Fight</label>
+            <select id="fight">
+              <option value="last">Last kill</option>
+              <option value="all">All fights</option>
+            </select>
+          </div>
+          <div>
+            <label for="windowMs">Window (ms)</label>
+            <input id="windowMs" type="number" value="6000" min="1000" step="500" />
+          </div>
+          <div>
+            <label for="offsetMs">Start offset (ms)</label>
+            <input id="offsetMs" type="number" value="4000" min="0" step="500" />
+          </div>
+          <div>
+            <label for="slots">Targets per window</label>
+            <input id="slots" type="number" value="4" min="1" max="10" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 16px">
+          <button id="analyze">Analyze</button>
+          <button id="load" class="ghost">Load fights</button>
+          <button id="logout" class="ghost" style="margin-left: auto">Disconnect</button>
+        </div>
+        <p class="hint">
+          <code>Load fights</code> fills the fight list from the report. Filtering uses the default
+          ability filter (drops non-scaling trinket damage); leave it alone unless you know why.
+        </p>
+      </section>
+
+      <section class="panel hidden" id="result-panel">
+        <div class="report-head">
+          <div>
+            <div class="report-title" id="report-title"></div>
+            <div class="report-meta" id="report-meta"></div>
+          </div>
+        </div>
+        <div id="fights" style="margin-top: 12px"></div>
+        <div id="results" style="margin-top: 8px"></div>
+        <div class="foot" id="foot"></div>
+      </section>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const state = { authenticated: false, fights: [] };
+      const STORAGE_KEY = 'amalyzer.wcl-credentials';
+
+      function readCredentials() {
+        try {
+          return JSON.parse(sessionStorage.getItem(STORAGE_KEY) || 'null');
+        } catch {
+          return null;
+        }
+      }
+
+      function writeCredentials(credentials) {
+        if (credentials) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(credentials));
+        else sessionStorage.removeItem(STORAGE_KEY);
+      }
+
+      const fmt = (n) =>
+        Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(2) + 'M'
+        : Math.abs(n) >= 1e3 ? (n / 1e3).toFixed(1) + 'k'
+        : String(Math.round(n));
+
+      const secs = (ms) => (ms / 1000).toFixed(1);
+
+      function setStatus(message, kind = '') {
+        const el = $('status');
+        el.textContent = message || '';
+        el.className = kind;
+      }
+
+      async function api(path, body) {
+        const credentials = readCredentials();
+        const headers = { 'Content-Type': 'application/json' };
+        if (credentials) {
+          headers['x-wcl-client-id'] = credentials.clientId;
+          headers['x-wcl-client-secret'] = credentials.clientSecret;
+        }
+
+        const res = await fetch(path, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body ?? {}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+        return data;
+      }
+
+      function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      }
+
+      function showLoggedIn(loggedIn) {
+        state.authenticated = loggedIn;
+        $('login-panel').classList.toggle('hidden', loggedIn);
+        $('query-panel').classList.toggle('hidden', !loggedIn);
+      }
+
+      $('login').addEventListener('click', async () => {
+        const clientId = $('clientId').value.trim();
+        const clientSecret = $('clientSecret').value.trim();
+        if (!clientId || !clientSecret) return setStatus('Enter both client ID and secret.', 'error');
+
+        $('login').disabled = true;
+        setStatus('Validating credentials…');
+        try {
+          await api('/api/login', { clientId, clientSecret });
+          writeCredentials({ clientId, clientSecret });
+          $('clientSecret').value = '';
+          showLoggedIn(true);
+          setStatus('Connected.', 'ok');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        } finally {
+          $('login').disabled = false;
+        }
+      });
+
+      $('logout').addEventListener('click', () => {
+        writeCredentials(null);
+        showLoggedIn(false);
+        $('result-panel').classList.add('hidden');
+        setStatus('Disconnected.');
+      });
+
+      $('load').addEventListener('click', async () => {
+        const report = $('report').value.trim();
+        if (!report) return setStatus('Paste a report URL first.', 'error');
+
+        $('load').disabled = true;
+        setStatus('Loading fights…');
+        try {
+          const meta = await api('/api/meta', { report });
+          state.fights = meta.fights;
+          const select = $('fight');
+          select.replaceChildren(
+            Object.assign(document.createElement('option'), { value: 'last', textContent: 'Last kill' }),
+            Object.assign(document.createElement('option'), { value: 'all', textContent: 'All fights' }),
+          );
+          meta.fights.forEach((fight) => {
+            const label = `#${fight.id} ${fight.kill ? 'kill' : Math.round(fight.fightPercentage ?? 0) + '%'} · ${fight.name} · ${secs(fight.durationMs)}s`;
+            select.append(Object.assign(document.createElement('option'), { value: String(fight.id), textContent: label }));
+          });
+          setStatus(`${meta.fights.length} fight(s) loaded from "${meta.title}".`, 'ok');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        } finally {
+          $('load').disabled = false;
+        }
+      });
+
+      $('analyze').addEventListener('click', async () => {
+        const report = $('report').value.trim();
+        if (!report) return setStatus('Paste a report URL first.', 'error');
+
+        $('analyze').disabled = true;
+        setStatus('Fetching windows and computing damage…');
+        try {
+          const result = await api('/api/damage', {
+            report,
+            fight: $('fight').value,
+            windowMs: Number($('windowMs').value),
+            offsetMs: Number($('offsetMs').value),
+            slots: Number($('slots').value),
+          });
+          render(result);
+          setStatus('', '');
+        } catch (error) {
+          setStatus(error.message, 'error');
+        } finally {
+          $('analyze').disabled = false;
+        }
+      });
+
+      function render(result) {
+        $('result-panel').classList.remove('hidden');
+        $('report-title').textContent = result.report.title;
+        $('report-meta').textContent =
+          `${result.report.code} · ${result.report.region}` +
+          (result.report.zone ? ` · ${result.report.zone}` : '') +
+          ` · ${result.windows.length} windows`;
+
+        const fights = $('fights');
+        fights.replaceChildren();
+        result.fights.forEach((fight) => {
+          fights.append(el('span', 'chip', `#${fight.id} ${fight.kill ? 'kill' : 'wipe'} · ${fight.name}`));
+        });
+
+        const table = el('table');
+        const head = el('thead');
+        const headRow = el('tr');
+        ['Window', 'Targets (expected DPS)'].forEach((title) => headRow.append(el('th', '', title)));
+        head.append(headRow);
+        table.append(head);
+
+        const body = el('tbody');
+
+        result.windows.forEach((window) => {
+          const row = el('tr');
+          row.append(el('td', 'time', `${secs(window.startTime)}–${secs(window.endTime + 1)}s`));
+
+          const cell = el('td');
+          const targets = el('div', 'targets');
+          const max = Math.max(...window.assignments.map((slot) => slot.dps), 1);
+
+          window.assignments.forEach((slot) => {
+            const target = el('div', 'target' + (slot.priority ? ' prio' : ''));
+            const top = el('div', 'target-top');
+            top.append(el('span', 'target-name', slot.name));
+            top.append(el('span', 'target-dps', fmt(slot.dps)));
+            const bar = el('div', 'bar');
+            const fill = el('i');
+            fill.style.width = `${Math.round((slot.dps / max) * 100)}%`;
+            bar.append(fill);
+            target.append(top, bar);
+            targets.append(target);
+          });
+
+          cell.append(targets);
+          row.append(cell);
+          body.append(row);
+        });
+
+        table.append(body);
+        $('results').replaceChildren(table);
+
+        const { limit, points } = result.rateLimit || {};
+        $('foot').replaceChildren(
+          el('span', '', limit && points != null ? `Rate limit: ${points}/${limit} points` : ''),
+          el('span', '', 'Sorted by expected damage in each window; * = forced priority.'),
+        );
+      }
+
+      showLoggedIn(Boolean(readCredentials()));
+    </script>
+  </body>
+</html>
