@@ -16,6 +16,7 @@ import {
   selectFights,
 } from '../wcl/report.ts';
 import { buildPrescienceApplications, matchPrescienceRecipients } from '../wcl/prescience.ts';
+import { PRESCIENCE_BUFF_ID, SHIFTING_SANDS_BUFF_ID } from '../wcl/queries.ts';
 import type { ReportFight, TimeWindow, WindowDamage } from '../wcl/types.ts';
 
 /** How the analysis slices a fight into damage windows. */
@@ -77,6 +78,8 @@ export type AnalyzeWindow = {
   castEnemyTarget?: { name: string };
   /** Actors with an active Prescience at this window's cast (cast target included). */
   buffed?: { key: string; name: string }[];
+  /** WCL-reattributed support damage for this buff window (sum over the buffed target's damage). */
+  supportDamage?: number;
   assignments: {
     key: string;
     name: string;
@@ -102,6 +105,8 @@ export type PrescienceCastInfo = {
   extended?: boolean;
   /** Aug Evoker that cast/applied this window's buff. */
   source?: { key: string; name: string };
+  /** Actor id of the Aug Evoker (used for the support-damage table query). */
+  sourceId?: number;
 };
 
 export type AnalyzeFight = Pick<
@@ -238,6 +243,7 @@ export async function analyzeReport(
 
         const targetByStart = new Map<number, { key: string; name: string }>();
         const sourceByStart = new Map<number, { key: string; name: string }>();
+        const sourceIdByStart = new Map<number, number>();
         const extendedByStart = new Set<number>();
         for (const application of windowApplications) {
           const actor = lookup.get(application.targetID);
@@ -251,6 +257,9 @@ export async function analyzeReport(
             application.sourceID != null ? lookup.get(application.sourceID) : undefined;
           if (sourceActor && !sourceByStart.has(startTime)) {
             sourceByStart.set(startTime, { key: sourceActor.key, name: sourceActor.name });
+          }
+          if (application.sourceID != null && !sourceIdByStart.has(startTime)) {
+            sourceIdByStart.set(startTime, application.sourceID);
           }
           if (application.extended) extendedByStart.add(startTime);
         }
@@ -266,6 +275,9 @@ export async function analyzeReport(
             ...(extendedByStart.has(window.startTime) ? { extended: true } : {}),
             ...(sourceByStart.has(window.startTime)
               ? { source: sourceByStart.get(window.startTime)! }
+              : {}),
+            ...(sourceIdByStart.has(window.startTime)
+              ? { sourceId: sourceIdByStart.get(window.startTime)! }
               : {}),
           })),
         );
@@ -330,6 +342,7 @@ export async function analyzeReport(
       const enemyByStart = new Map<number, { name: string }>();
       const extendedByStart = new Set<number>();
       const sourceByStart = new Map<number, { key: string; name: string }>();
+      const sourceIdByStart = new Map<number, number>();
 
       for (const cast of casts) {
         const rawTarget = cast.targetID != null ? lookup.get(cast.targetID) : undefined;
@@ -354,6 +367,9 @@ export async function analyzeReport(
         if (sourceActor && !sourceByStart.has(startTime)) {
           sourceByStart.set(startTime, { key: sourceActor.key, name: sourceActor.name });
         }
+        if (cast.sourceID != null && !sourceIdByStart.has(startTime)) {
+          sourceIdByStart.set(startTime, cast.sourceID);
+        }
       }
 
       castInfoByFightId.set(
@@ -370,6 +386,9 @@ export async function analyzeReport(
           ...(extendedByStart.has(window.startTime) ? { extended: true } : {}),
           ...(sourceByStart.has(window.startTime)
             ? { source: sourceByStart.get(window.startTime)! }
+            : {}),
+          ...(sourceIdByStart.has(window.startTime)
+            ? { sourceId: sourceIdByStart.get(window.startTime)! }
             : {}),
         })),
       );
@@ -402,6 +421,7 @@ export async function analyzeReport(
   const effectiveMode: WindowMode = windowMode !== 'fixed' && castsFound > 0 ? windowMode : 'fixed';
 
   const perFight: { windows: TimeWindow[]; damage: WindowDamage[] }[] = [];
+  const supportTotals = new Map<number, { sum: number; count: number }>();
 
   for (const fight of fights) {
     const duration = fight.endTime - fight.startTime;
@@ -412,9 +432,34 @@ export async function analyzeReport(
 
     if (!windows.length) continue;
 
-    const damage = await fetchDamageWindows(client, code, fight, toReportTime(windows, fight.startTime), {
+    const castInfos = castInfoByFightId.get(fight.id) ?? [];
+    const reportWindows = toReportTime(windows, fight.startTime).map((window) => {
+      const sourceId = castInfos[window.index]?.sourceId;
+      return {
+        ...window,
+        ...(sourceId != null
+          ? {
+              support: {
+                abilityId:
+                  windowMode === 'shifting-sands' ? SHIFTING_SANDS_BUFF_ID : PRESCIENCE_BUFF_ID,
+                sourceId,
+              },
+            }
+          : {}),
+      };
+    });
+
+    const damage = await fetchDamageWindows(client, code, fight, reportWindows, {
       ...(filterExpression ? { filterExpression } : {}),
     });
+
+    for (const row of damage) {
+      if (row.supportDamage == null) continue;
+      const total = supportTotals.get(row.windowIndex) ?? { sum: 0, count: 0 };
+      total.sum += row.supportDamage;
+      total.count += 1;
+      supportTotals.set(row.windowIndex, total);
+    }
 
     perFight.push({ windows, damage });
   }
@@ -506,6 +551,14 @@ export async function analyzeReport(
         ? { castTarget: castTargetByIndex.get(row.window.index)! }
         : {}),
       ...(augByIndex.has(row.window.index) ? { aug: augByIndex.get(row.window.index)! } : {}),
+      ...(supportTotals.has(row.window.index)
+        ? {
+            supportDamage: Math.round(
+              supportTotals.get(row.window.index)!.sum /
+                supportTotals.get(row.window.index)!.count,
+            ),
+          }
+        : {}),
       ...(enemyTargetByIndex.has(row.window.index)
         ? { castEnemyTarget: enemyTargetByIndex.get(row.window.index)! }
         : {}),

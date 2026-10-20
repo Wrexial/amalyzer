@@ -801,12 +801,6 @@
         const head = el('thead');
         const headRow = el('tr');
         const auraName = result.windowMode === 'shifting-sands' ? 'Shifting Sands' : 'Prescience';
-        const buffRate =
-          result.windowMode === 'prescience-buff'
-            ? 0.03
-            : result.windowMode === 'shifting-sands'
-              ? 0.02
-              : 0;
         const windowHeading =
           result.windowMode === 'fixed'
             ? 'Window'
@@ -986,15 +980,19 @@
             if (targetEntry) {
               const compare = el('div', 'compare');
               const unit = state.metric === 'average' ? 'damage' : 'DPS';
-              const gainDamage = targetEntry.average * buffRate;
-              const gainDps = targetEntry.dps * buffRate;
 
-              if (buffRate > 0) {
+              if (typeof window.supportDamage === 'number') {
+                const seconds = (window.endTime - window.startTime + 1) / 1000;
+                const supportDps = seconds > 0 ? window.supportDamage / seconds : 0;
+                const signed = `${window.supportDamage >= 0 ? '+' : ''}${fmt(
+                  window.supportDamage,
+                )}`;
+
                 compare.append(
                   el(
                     'span',
-                    'up',
-                    `Est. gain: +${fmt(gainDamage)} damage (${fmt(gainDps)} DPS)`,
+                    window.supportDamage >= 0 ? 'up' : 'down',
+                    `WCL credited: ${signed} damage (${fmt(supportDps)} DPS)`,
                   ),
                 );
 
@@ -1005,8 +1003,8 @@
                   dps: 0,
                   windows: 0,
                 };
-                total.damage += gainDamage;
-                total.dps += gainDps;
+                total.damage += window.supportDamage;
+                total.dps += supportDps;
                 total.windows += 1;
                 augTotals.set(augKey, total);
               }
@@ -1054,7 +1052,7 @@
             '',
             result.windowMode === 'fixed'
               ? ''
-              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; est. gain = target damage × ${buffRate * 100}%.`,
+              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; WCL credited = buff damage reattributed to the Aug by Warcraft Logs.`,
           ),
         ];
 
@@ -1064,7 +1062,7 @@
             el(
               'span',
               'aug-gain',
-              `Est. buff damage → ${total.name}: +${fmt(total.damage)} damage · +${fmt(total.dps / total.windows)} DPS avg per window`,
+              `WCL reattributed → ${total.name}: ${total.damage >= 0 ? '+' : ''}${fmt(total.damage)} damage · ${fmt(total.dps / total.windows)} DPS avg per window`,
             ),
           );
         }

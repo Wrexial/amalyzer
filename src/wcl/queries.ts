@@ -103,8 +103,19 @@ export function isAnalyzableFight(fight: ReportFight): boolean {
  * Its value is `{ data: { total, entries: [{ id, total }] } }` — see
  * `DamageTableJson`.
  */
+export type DamageWindowRange = {
+  startTime: number;
+  endTime: number;
+  /**
+   * Optional WCL support-damage query for the buff applied in this window.
+   * WCL reattributes buff-gained damage to the Aug evoker; querying the buff's
+   * ability id for that evoker returns the credited damage.
+   */
+  support?: { abilityId: number; sourceId?: number };
+};
+
 export function buildDamageWindowsQuery(
-  ranges: { startTime: number; endTime: number }[],
+  ranges: DamageWindowRange[],
   hasFilter: boolean,
 ): string {
   const aliases = ranges
@@ -116,7 +127,16 @@ export function buildDamageWindowsQuery(
           endTime: ${Math.round(range.endTime)}
           dataType: DamageDone
           ${hasFilter ? 'filterExpression: $filter' : ''}
-        )`,
+        )${range.support ? `
+        s${index}: table(
+          fightIDs: [$fightId]
+          startTime: ${Math.round(range.startTime)}
+          endTime: ${Math.round(range.endTime)}
+          dataType: DamageDone
+          abilityID: ${range.support.abilityId}
+          viewBy: Ability
+          ${range.support.sourceId != null ? `sourceID: ${range.support.sourceId}` : ''}
+        )` : ''}`,
     )
     .join('\n');
 

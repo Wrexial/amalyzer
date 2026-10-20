@@ -214,10 +214,13 @@ How it is built:
 
 The first column is two lines: `#N - start - end - duration` (e.g.
 `#2 - 0:09 - 0:28 - 18.4s`) and the buff target's name, class-coloured, with
-the class icon. Each row also shows an **estimated buff gain** for the target
-(`target damage × 3%` for Prescience crit, `× 2%` for Shifting Sands
-versatility). Those gains are summed per caster and printed in the footer, so
-the Aug Evoker gets credit for the buff's contribution. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+the class icon. Each row also shows the **WCL-reattributed support damage** for that window.
+Warcraft Logs already attributes buff-gained damage back to the Aug Evoker; the
+analysis asks the same `table(dataType: DamageDone)` for the buff ability
+(410089 / 413984) filtered to that caster and `viewBy: Ability`, so the number
+comes from the log's support events rather than a crit/versatility estimate.
+The credited damage is summed per caster in the footer. Negative support events
+(known WCL quirk with stacked enemies) are kept as-is. Recasts get a yellow **extended** badge and a yellow row tint, and a red
 **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",

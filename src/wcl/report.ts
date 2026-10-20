@@ -95,7 +95,7 @@ export async function fetchDamageWindows(
   client: WCLClient,
   code: string,
   fight: ReportFight,
-  windows: TimeWindow[],
+  windows: (TimeWindow & { support?: { abilityId: number; sourceId?: number } })[],
   options: { filterExpression?: string; batchSize?: number } = {},
 ): Promise<WindowDamage[]> {
   const batchSize = options.batchSize ?? 20;
@@ -117,9 +117,18 @@ export async function fetchDamageWindows(
     batch.forEach((window, index) => {
       const table = report[`w${index}`];
       const parsed = table?.data ?? table;
+      const supportTable = report[`s${index}`];
+      const supportParsed = supportTable?.data ?? supportTable;
+      const supportDamage = supportParsed
+        ? typeof supportParsed.total === 'number'
+          ? supportParsed.total
+          : (supportParsed.entries ?? []).reduce((sum, entry) => sum + (entry.total ?? 0), 0)
+        : undefined;
+
       results.push({
         windowIndex: window.index,
         entries: parsed?.entries ?? [],
+        ...(supportDamage != null ? { supportDamage } : {}),
       });
     });
   }
