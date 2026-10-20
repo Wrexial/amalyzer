@@ -35,6 +35,8 @@ export type PrescienceApplication = {
   endTimestamp: number;
   sourceID?: number;
   targetID: number;
+  /** True when this application refreshed a Prescience that was already active. */
+  extended?: boolean;
 };
 
 export type MatchedPrescienceCast = PrescienceCast & {
@@ -42,18 +44,20 @@ export type MatchedPrescienceCast = PrescienceCast & {
   recipientID?: number;
   /** Exclusive report-relative end of the aura this cast applied. */
   applicationEndTimestamp?: number;
+  /** True when the cast refreshed an existing Prescience on that target. */
+  extended?: boolean;
 };
 
 /**
  * Turns raw aura events into application intervals.
  *
- * - `applybuff` / `refreshbuff` starts a window for that cast. A refresh does
- *   not end the target's aura, so every application since the last removal
- *   shares the aura's end timestamp: the target stayed buffed across the refresh.
- * - `removebuff` closes every open application on that target (death, dispel,
- *   or normal expiry).
- * - Applications still open when the fight ends are capped at the fallback
- *   duration from their last start, because the removal is missing from the log.
+ * - `applybuff` starts a window. `refreshbuff` (or an apply while the aura is
+ *   already active) **extends** it: the previous window ends at the refresh and
+ *   the new one runs from there, so `#1 -> #5` and `#5 -> removal` are separate
+ *   durations instead of one merged buff.
+ * - `removebuff` closes the active window (death, dispel, or normal expiry).
+ * - A window still open when the fight ends is capped at the fallback duration,
+ *   because the removal is missing from the log.
  */
 export function buildPrescienceApplications(
   events: PrescienceBuffEvent[],
@@ -61,19 +65,17 @@ export function buildPrescienceApplications(
   fallbackDurationMs: number,
 ): PrescienceApplication[] {
   const applications: PrescienceApplication[] = [];
-  const openByTarget = new Map<number, Omit<PrescienceApplication, 'endTimestamp'>[]>();
+  const active = new Map<number, Omit<PrescienceApplication, 'endTimestamp'>>();
 
   const close = (targetID: number, endTimestamp: number) => {
-    const open = openByTarget.get(targetID);
-    if (!open) return;
+    const current = active.get(targetID);
+    if (!current) return;
 
-    for (const application of open) {
-      applications.push({
-        ...application,
-        endTimestamp: Math.max(application.timestamp, endTimestamp),
-      });
-    }
-    openByTarget.delete(targetID);
+    applications.push({
+      ...current,
+      endTimestamp: Math.max(current.timestamp, endTimestamp),
+    });
+    active.delete(targetID);
   };
 
   for (const event of [...events].sort((a, b) => a.timestamp - b.timestamp)) {
@@ -92,25 +94,24 @@ export function buildPrescienceApplications(
       continue;
     }
 
-    const open = openByTarget.get(event.targetID) ?? [];
-    open.push({
+    const wasActive = active.has(event.targetID);
+    close(event.targetID, event.timestamp);
+    active.set(event.targetID, {
       timestamp: event.timestamp,
       ...(event.sourceID ? { sourceID: event.sourceID } : {}),
       targetID: event.targetID,
+      ...(wasActive || event.type === 'refreshbuff' ? { extended: true } : {}),
     });
-    openByTarget.set(event.targetID, open);
   }
 
-  for (const open of openByTarget.values()) {
-    const lastStart = open[open.length - 1]!.timestamp;
-    const end = Math.min(Math.max(lastStart, fightEndTimestamp), lastStart + fallbackDurationMs);
-
-    for (const application of open) {
-      applications.push({
-        ...application,
-        endTimestamp: Math.max(application.timestamp, end),
-      });
-    }
+  for (const current of active.values()) {
+    applications.push({
+      ...current,
+      endTimestamp: Math.min(
+        Math.max(current.timestamp, fightEndTimestamp),
+        current.timestamp + fallbackDurationMs,
+      ),
+    });
   }
 
   return applications.sort((a, b) => a.timestamp - b.timestamp);
@@ -171,6 +172,7 @@ export function matchPrescienceRecipients(
         ...cast,
         recipientID: application.targetID,
         applicationEndTimestamp: application.endTimestamp,
+        ...(application.extended ? { extended: true } : {}),
       };
     });
 }

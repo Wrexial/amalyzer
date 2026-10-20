@@ -88,6 +88,8 @@ export type PrescienceCastInfo = {
   target?: { key: string; name: string };
   /** Raw cast target when it was an enemy/NPC instead of the buff recipient. */
   enemyTarget?: { name: string };
+  /** True when this cast refreshed an existing Prescience on the same target. */
+  extended?: boolean;
 };
 
 export type AnalyzeFight = Pick<
@@ -217,6 +219,7 @@ export async function analyzeReport(
 
       const targetByStart = new Map<number, { key: string; name: string }>();
       const enemyByStart = new Map<number, { name: string }>();
+      const extendedByStart = new Set<number>();
 
       for (const cast of casts) {
         const rawTarget = cast.targetID != null ? lookup.get(cast.targetID) : undefined;
@@ -234,6 +237,8 @@ export async function analyzeReport(
         if (rawTarget && !rawTarget.isPlayer && !enemyByStart.has(startTime)) {
           enemyByStart.set(startTime, { name: rawTarget.name });
         }
+
+        if (cast.extended) extendedByStart.add(startTime);
       }
 
       castInfoByFightId.set(
@@ -247,6 +252,7 @@ export async function analyzeReport(
           ...(enemyByStart.has(window.startTime)
             ? { enemyTarget: enemyByStart.get(window.startTime)! }
             : {}),
+          ...(extendedByStart.has(window.startTime) ? { extended: true } : {}),
         })),
       );
 

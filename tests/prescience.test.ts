@@ -21,7 +21,7 @@ test('tracks an application until removebuff', () => {
   ]);
 });
 
-test('a refresh starts a new window but shares the aura end', () => {
+test('a refresh splits the previous window at the refresh', () => {
   const applications = buildPrescienceApplications(
     [
       { timestamp: 1000, type: 'applybuff', sourceID: 10, targetID: 2 },
@@ -33,12 +33,12 @@ test('a refresh starts a new window but shares the aura end', () => {
   );
 
   assert.deepEqual(applications, [
-    { timestamp: 1000, endTimestamp: 25_000, sourceID: 10, targetID: 2 },
-    { timestamp: 6000, endTimestamp: 25_000, sourceID: 10, targetID: 2 },
+    { timestamp: 1000, endTimestamp: 6000, sourceID: 10, targetID: 2 },
+    { timestamp: 6000, endTimestamp: 25_000, sourceID: 10, targetID: 2, extended: true },
   ]);
 });
 
-test('a refresh without a removal uses the fallback from the last start', () => {
+test('a refresh without a removal splits and caps the new window', () => {
   const applications = buildPrescienceApplications(
     [
       { timestamp: 1000, type: 'applybuff', sourceID: 10, targetID: 2 },
@@ -49,8 +49,11 @@ test('a refresh without a removal uses the fallback from the last start', () => 
   );
 
   assert.deepEqual(
-    applications.map((application) => application.endTimestamp),
-    [24_000, 24_000],
+    applications.map((application) => [application.endTimestamp, application.extended]),
+    [
+      [6000, undefined],
+      [24_000, true],
+    ],
   );
 });
 
@@ -140,4 +143,15 @@ test("prefers the application on the cast's own target", () => {
 
   assert.equal(matched[0]!.recipientID, 2);
   assert.equal(matched[0]!.applicationEndTimestamp, 19_020);
+});
+
+test('carries the extended flag from a refresh onto the cast', () => {
+  const matched = matchPrescienceRecipients(
+    [{ timestamp: 6000, sourceID: 10, targetID: 2 }],
+    [{ timestamp: 6000, endTimestamp: 25_000, sourceID: 10, targetID: 2, extended: true }],
+  );
+
+  assert.equal(matched[0]!.recipientID, 2);
+  assert.equal(matched[0]!.applicationEndTimestamp, 25_000);
+  assert.equal(matched[0]!.extended, true);
 });

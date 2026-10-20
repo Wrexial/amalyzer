@@ -179,13 +179,14 @@ Notes that matter:
 
 By default each **Prescience cast** opens a window that lasts as long as the aura
 actually lasted in the log: `applybuff` starts it, `removebuff` ends it (death,
-dispel, or normal expiry). A `refreshbuff` starts a new window but shares the
-aura's end, since the target never stopped being buffed. The fallback duration is
-only used when the removal is missing from the log.
+dispel, or normal expiry). A `refreshbuff` **extends** it: the previous window
+ends at the refresh and a new one starts there, so #1→#5 and #5→removal are
+separate durations. The fallback duration is only used when the removal is
+missing from the log.
 
 ```
-Prescience cast @ 0:04, aura removed @ 0:22  -> [0:04, 0:22)
-Prescience cast @ 0:10, refreshed @ 0:16, removed @ 0:28 -> [0:10, 0:28)
+Prescience cast @ 0:04, aura removed @ 0:22        -> [0:04, 0:22)
+Prescience cast @ 0:10, refresh @ 0:16, removed   -> [0:10, 0:16) then [0:16, 0:28)
 ```
 
 Windows overlap when casts are closer together than the aura lasts (the usual
@@ -213,7 +214,8 @@ How it is built:
 
 The first column is two lines: `#N - start - end - duration` (e.g.
 `#2 - 0:09 - 0:28 - 18.4s`) and the Prescience target's name, class-coloured,
-with the class icon.
+with the class icon. Recasts get a yellow **extended** badge on that second
+line, and a red **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
 `--prescience-duration`) is only a fallback for missing removal events.
