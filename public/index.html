@@ -856,7 +856,9 @@
           // not buffed at this cast.
           if (result.windowMode !== 'fixed' && window.castTarget) {
             const targetEntry = window.entries.find((entry) => entry.key === targetKey);
-            const bestUnbuffed = window.entries.find((entry) => !buffedKeys.has(entry.key));
+            const bestUnbuffed = window.entries.find(
+              (entry) => !buffedKeys.has(entry.key) && !isAugEvoker(entry),
+            );
 
             if (targetEntry) {
               const compare = el('div', 'compare');
