@@ -123,7 +123,7 @@
       }
 
       table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      th:first-child, td:first-child { width: 245px; }
+      th:first-child, td:first-child { width: 175px; }
 
       th {
         text-align: left;
@@ -140,7 +140,18 @@
 
       tr:last-child td { border-bottom: none; }
 
-      .time { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+      .time { font-variant-numeric: tabular-nums; color: var(--muted); }
+      .time-main { font-size: 12px; white-space: nowrap; }
+      .time-target {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-top: 2px;
+        font-size: 12px;
+        min-width: 0;
+      }
+      .time-target .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .time-target .class-icon { width: 14px; height: 14px; }
 
       .targets {
         display: flex;
@@ -761,7 +772,24 @@
           } else {
             windowText = `#${window.index + 1}`;
           }
-          const timeCell = el('td', 'time', windowText);
+          const timeCell = el('td', 'time');
+          const timeMain = el('div', 'time-main', windowText);
+          timeCell.append(timeMain);
+
+          if (result.windowMode !== 'fixed') {
+            const target = castInfo?.target ?? window.castTarget;
+            if (target) {
+              const targetClass = window.entries.find((entry) => entry.key === target.key)?.class;
+              const slug = classSlug(targetClass);
+              const line = el('div', 'time-target' + (slug ? ` class-${slug}` : ''));
+              line.title = `Prescience target: ${target.name}`;
+              const icon = classIcon(targetClass);
+              if (icon) line.append(icon);
+              line.append(el('span', 'nm', target.name));
+              timeCell.append(line);
+            }
+          }
+
           if (window.castTarget) timeCell.title = `Prescience cast on ${window.castTarget.name}`;
           row.append(timeCell);
 
@@ -773,7 +801,7 @@
             mark.title = `Cast while targeting ${window.castEnemyTarget.name}; buff credited to ${
               window.castTarget?.name ?? 'unknown'
             }`;
-            timeCell.append(mark);
+            timeMain.append(mark);
             row.classList.add('enemy-cast-row');
           }
 
@@ -840,7 +868,10 @@
                   `Buffed ${targetEntry.name}: ${fmt(metricValue(targetEntry))} ${unit}`,
                 ),
               );
-              if (bestUnbuffed) {
+              // Only show an alternative when it actually beats the buffed
+              // target; if the buffed target is already the best, the
+              // comparison adds nothing.
+              if (bestUnbuffed && metricValue(targetEntry) < metricValue(bestUnbuffed)) {
                 compare.append(
                   el(
                     'span',
@@ -850,11 +881,7 @@
                 );
                 const delta = metricValue(targetEntry) - metricValue(bestUnbuffed);
                 compare.append(
-                  el(
-                    'span',
-                    delta >= 0 ? 'up' : 'down',
-                    `${delta >= 0 ? '+' : ''}${fmt(delta)} ${unit}`,
-                  ),
+                  el('span', 'down', `${fmt(delta)} ${unit}`),
                 );
               }
               cell.append(compare);

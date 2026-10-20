@@ -290,7 +290,9 @@ enemy-targeted casts are handled too.
 
 Below the cards each Prescience row shows `Buffed <target>: X · Best unbuffed
 <name>: Y` (plus the delta) so the value of the current buff can be compared
-directly with the best alternative that was not buffed at that moment.
+directly with the best alternative that was not buffed at that moment. The
+`Best unbuffed` half is only shown when that alternative actually out-damages the
+buffed target; if the buffed target is already ahead, only its value is shown.
 
 ## The "best logs" path
 
