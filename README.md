@@ -213,7 +213,7 @@ How it is built:
 3. There is no start offset: the first window begins at the first cast.
 
 The first column is two lines: `#N - start - end - duration` (e.g.
-`#2 - 0:09 - 0:28 - 18.4s`) and the buff target's name, class-coloured, with
+`#2 - 0:09 - 0:28 - 18.4s`) and `<target> : <damage/DPS>`, class-coloured, with
 the class icon. Each row also shows the **WCL-reattributed support damage** for that window.
 Warcraft Logs records this as support damage events: the buff ability id
 (410089 / 413984), `sourceID` = the Aug, `supportID` = the buffed player, and
@@ -349,14 +349,13 @@ keeps the current cast target visible: it is the buff being evaluated, not a
 leftover from an earlier cast. Back-checking uses the resolved recipients, so
 enemy-targeted casts are handled too.
 
-Below the cards each Prescience row shows `Buffed <target>: X · Best unbuffed
-<name>: Y` (plus the delta) so the value of the current buff can be compared
-directly with the best alternative that was not buffed at that moment. Augmentation
-Evokers are excluded from the `Best unbuffed` candidate list. The comparison is
-only shown when that alternative actually out-damages the buffed target; if the
-buffed target is already ahead, only its value is shown. A summary at the bottom
-aggregates those positive swaps: average DPS gain per Prescience window and the
-summed raw-damage gain across them.
+Below the cards each Prescience row shows `Best unbuffed <name>: Y` (plus the
+delta) when an unbuffed alternative out-damages the buffed target, plus the
+`WCL credited` support number. Augmentation Evokers are excluded from the `Best
+unbuffed` candidate list. The buffed target's own value lives in the first
+column next to their name. A summary at the bottom aggregates those positive
+swaps: average DPS gain per Prescience window and the summed raw-damage gain
+across them.
 
 ## The "best logs" path
 
