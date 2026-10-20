@@ -154,9 +154,10 @@ export async function fetchPrescienceCasts(
     });
 
     const events = data.reportData.report?.events;
-    if (!events?.data) break;
+    if (!events) break;
 
-    events.data.forEach((event) => {
+    // WCL can return an empty page with a non-null continuation timestamp.
+    (events.data ?? []).forEach((event) => {
       if (event.abilityGameID != null && event.abilityGameID !== PRESCIENCE_CAST_ID) return;
       if (event.type && event.type !== 'cast') return;
       if (typeof event.timestamp !== 'number') return;
@@ -197,9 +198,10 @@ async function fetchBuffEvents(
     });
 
     const events = data.reportData.report?.events;
-    if (!events?.data) break;
+    if (!events) break;
 
-    events.data.forEach((event) => {
+    // Do not stop on an empty page; WCL docs say to follow nextPageTimestamp.
+    (events.data ?? []).forEach((event) => {
       if (event.abilityGameID != null && event.abilityGameID !== abilityId) return;
       if (
         event.type &&
@@ -278,9 +280,10 @@ export async function fetchSupportDamageEvents(
     });
 
     const batch = data.reportData.report?.events;
-    if (!batch?.data) break;
+    if (!batch) break;
 
-    batch.data.forEach((event) => {
+    // Do not stop on an empty page; WCL docs say to follow nextPageTimestamp.
+    (batch.data ?? []).forEach((event) => {
       if (typeof event.timestamp !== 'number') return;
       if (typeof event.supportID !== 'number') return;
       if (typeof event.amount !== 'number') return;
