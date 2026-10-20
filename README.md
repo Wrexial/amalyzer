@@ -268,9 +268,8 @@ analysis to the Augmentation mastery aura (413984) instead of Prescience. There
 are no cast events for it, so each **aura application** is a window:
 `applybuff`/`refreshbuff` starts it and `removebuff` ends it, with refreshes
 splitting the previous window just like Prescience. The recipient is the buff
-target, so highlighting, `extended` badges, the buffed back-check and the
-`Buffed vs Best unbuffed` comparison all work unchanged. Pet applications are
-filtered out. The fallback duration is `shiftingSandsDurationMs` (default
+target, so highlighting, `extended` badges and the buffed back-check all work
+unchanged. Pet applications are filtered out. The fallback duration is `shiftingSandsDurationMs` (default
 10 400 ms; `--shifting-sands-duration`), again only for missing removals.
 
 The old clock grid is still available as `windowMode: 'fixed'`: 27 000 ms
@@ -349,13 +348,10 @@ keeps the current cast target visible: it is the buff being evaluated, not a
 leftover from an earlier cast. Back-checking uses the resolved recipients, so
 enemy-targeted casts are handled too.
 
-Below the cards each Prescience row shows `Best unbuffed <name>: Y` (plus the
-delta) when an unbuffed alternative out-damages the buffed target, plus the
-`WCL credited` support number. Augmentation Evokers are excluded from the `Best
-unbuffed` candidate list. The buffed target's own value lives in the first
-column next to their name. A summary at the bottom aggregates those positive
-swaps: average DPS gain per Prescience window and the summed raw-damage gain
-across them.
+The buffed target's damage/DPS appears in the first column next to their name.
+`no target` and `extended` badges render on a third line so a long name/value
+never pushes the name out. Below the cards a row only shows the `WCL credited`
+support number, when WCL emitted support for that target/window.
 
 ## The "best logs" path
 

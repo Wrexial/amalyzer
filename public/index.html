@@ -153,6 +153,7 @@
       .time-target .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .time-target .class-icon { width: 14px; height: 14px; }
       .time-value { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+      .time-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
 
       .targets {
         display: flex;
@@ -926,9 +927,6 @@
           $('report-meta').textContent += ` · phases from #${reference.id}`;
         }
 
-        let theoreticalGain = 0;
-        let theoreticalDamage = 0;
-        let theoreticalWindows = 0;
         let currentBody;
         let currentPhase;
         result.windows.forEach((window) => {
@@ -1005,40 +1003,43 @@
           timeCell.append(timeMain);
 
           if (result.windowMode !== 'fixed') {
-            if (castTarget || window.castEnemyTarget || castInfo?.extended) {
+            if (castTarget) {
               const line = el('div', 'time-target');
-              if (castTarget) {
-                const targetClass = targetEntry?.class;
-                const slug = classSlug(targetClass);
-                if (slug) line.classList.add(`class-${slug}`);
-                line.title = `${auraName} target: ${castTarget.name}`;
-                const icon = classIcon(targetClass);
-                if (icon) line.append(icon);
-                line.append(el('span', 'nm', castTarget.name));
-                if (targetEntry) {
-                  const unit = state.metric === 'average' ? 'damage' : 'DPS';
-                  line.append(
-                    el(
-                      'span',
-                      'time-value',
-                      `: ${fmt(metricValue(targetEntry))} ${unit}`,
-                    ),
-                  );
-                }
+              const targetClass = targetEntry?.class;
+              const slug = classSlug(targetClass);
+              if (slug) line.classList.add(`class-${slug}`);
+              line.title = `${auraName} target: ${castTarget.name}`;
+              const icon = classIcon(targetClass);
+              if (icon) line.append(icon);
+              line.append(el('span', 'nm', castTarget.name));
+              if (targetEntry) {
+                const unit = state.metric === 'average' ? 'damage' : 'DPS';
+                line.append(
+                  el(
+                    'span',
+                    'time-value',
+                    `: ${fmt(metricValue(targetEntry))} ${unit}`,
+                  ),
+                );
               }
+              timeCell.append(line);
+            }
+
+            if (window.castEnemyTarget || castInfo?.extended) {
+              const badges = el('div', 'time-badges');
               if (window.castEnemyTarget) {
                 const mark = el('span', 'no-target', 'no target');
                 mark.title = `Cast while targeting ${window.castEnemyTarget.name}; buff credited to ${
                   castTarget?.name ?? 'unknown'
                 }`;
-                line.append(mark);
+                badges.append(mark);
               }
               if (castInfo?.extended) {
                 const mark = el('span', 'extended-mark', 'extended');
                 mark.title = `Recast: extended an existing ${auraName} on this target`;
-                line.append(mark);
+                badges.append(mark);
               }
-              timeCell.append(line);
+              timeCell.append(badges);
             }
           }
 
@@ -1098,61 +1099,25 @@
 
           cell.append(targets);
 
-          // Value of the just-buffed target vs the best alternative that was
-          // not buffed at this cast.
           if (result.windowMode !== 'fixed' && targetEntry) {
-            const bestUnbuffed = window.entries.find(
-              (entry) => !buffedKeys.has(entry.key) && !isAugEvoker(entry),
-            );
-
-            if (targetEntry && bestUnbuffed) {
-              const deltaDps = bestUnbuffed.dps - targetEntry.dps;
-              if (deltaDps > 0) {
-                theoreticalGain += deltaDps;
-                theoreticalDamage += bestUnbuffed.average - targetEntry.average;
-                theoreticalWindows += 1;
-              }
-            }
-
-            {
+            if (typeof window.supportDamage === 'number') {
               const compare = el('div', 'compare');
-              const unit = state.metric === 'average' ? 'damage' : 'DPS';
+              const seconds = (window.endTime - window.startTime + 1) / 1000;
+              const supportDps = seconds > 0 ? window.supportDamage / seconds : 0;
+              const signed = `${window.supportDamage >= 0 ? '+' : ''}${fmt(
+                window.supportDamage,
+              )}`;
 
-              if (typeof window.supportDamage === 'number') {
-                const seconds = (window.endTime - window.startTime + 1) / 1000;
-                const supportDps = seconds > 0 ? window.supportDamage / seconds : 0;
-                const signed = `${window.supportDamage >= 0 ? '+' : ''}${fmt(
-                  window.supportDamage,
-                )}`;
-
-                const credited = el(
-                  'span',
-                  window.supportDamage >= 0 ? 'up' : 'down',
-                  `WCL credited: ${signed} damage (${fmt(supportDps)} DPS)`,
-                );
-                credited.title = `${targetEntry.name}'s damage reattributed through ${
-                  window.aug?.name ?? 'the Aug'
-                }'s ${auraName} in this window`;
-                compare.append(credited);
-
-              }
-              // Only show an alternative when it actually beats the buffed
-              // target; if the buffed target is already the best, the
-              // comparison adds nothing.
-              if (bestUnbuffed && metricValue(targetEntry) < metricValue(bestUnbuffed)) {
-                compare.append(
-                  el(
-                    'span',
-                    '',
-                    `Best unbuffed ${bestUnbuffed.name}: ${fmt(metricValue(bestUnbuffed))} ${unit}`,
-                  ),
-                );
-                const delta = metricValue(targetEntry) - metricValue(bestUnbuffed);
-                compare.append(
-                  el('span', 'down', `${fmt(delta)} ${unit}`),
-                );
-              }
-              if (compare.childElementCount) cell.append(compare);
+              const credited = el(
+                'span',
+                window.supportDamage >= 0 ? 'up' : 'down',
+                `WCL credited: ${signed} damage (${fmt(supportDps)} DPS)`,
+              );
+              credited.title = `${targetEntry.name}'s damage reattributed through ${
+                window.aug?.name ?? 'the Aug'
+              }'s ${auraName} in this window`;
+              compare.append(credited);
+              cell.append(compare);
             }
           }
 
@@ -1186,16 +1151,6 @@
               ),
             );
           }
-        }
-
-        if (theoreticalWindows > 0) {
-          footItems.push(
-            el(
-              'span',
-              'gain',
-              `Theoretical best DPS gain: +${fmt(theoreticalGain / theoreticalWindows)} DPS avg per window · +${fmt(theoreticalDamage)} damage total (${theoreticalWindows} window${theoreticalWindows === 1 ? '' : 's'})`,
-            ),
-          );
         }
 
         $('foot').replaceChildren(...footItems);
