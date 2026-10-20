@@ -233,6 +233,8 @@ export type ActorLookup = {
   class?: string;
   /** Spec names seen in `playerDetails`, e.g. `["Augmentation"]`. */
   specs?: string[];
+  /** Owner actor id when this is a pet/summon (used to credit pet damage). */
+  ownerId?: number;
   /** Stable-ish key for grouping across fights: `name@server`. */
   key: string;
 };
@@ -270,6 +272,7 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
     actorType?: string,
     actorClass?: string,
     specs?: string[],
+    ownerId?: number,
   ) => {
     const existing = lookup.get(id);
     const player = players.get(id);
@@ -277,6 +280,7 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
     const resolvedType = actorType ?? existing?.type;
     const resolvedClass = actorClass ?? existing?.class ?? player?.type;
     const resolvedSpecs = specs ?? existing?.specs ?? player?.specs?.map((entry) => entry.spec);
+    const resolvedOwner = ownerId ?? existing?.ownerId;
 
     lookup.set(id, {
       id,
@@ -286,6 +290,7 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
       isPlayer: resolvedType === 'Player' || Boolean(player),
       ...(resolvedClass ? { class: resolvedClass } : {}),
       ...(resolvedSpecs?.length ? { specs: resolvedSpecs } : {}),
+      ...(resolvedOwner ? { ownerId: resolvedOwner } : {}),
       key: `${name.toLowerCase()}@${(resolvedServer ?? '').toLowerCase()}`,
     });
   };
@@ -297,6 +302,8 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
       actor.server,
       actor.type,
       actor.type === 'Player' ? actor.subType : undefined,
+      undefined,
+      actor.petOwner,
     ),
   );
   meta.players.forEach((player) =>

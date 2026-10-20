@@ -198,7 +198,10 @@ How it is built:
    abilityID: 409311)`; `fetchPrescienceBuffEvents()` fetches the aura events
    (`applybuff`, `refreshbuff`, `removebuff`) for 410089.
    `buildPrescienceApplications()` turns those into intervals with real end
-   times, and `matchPrescienceRecipients()` pairs each cast with the nearest
+   times. WCL copies/applies Prescience to pets as well (Akaari's Soul, ghouls,
+   …), so only applications on **player** actors are kept — pet buffs have
+   short, noisy lifetimes.
+   `matchPrescienceRecipients()` then pairs each cast with the nearest player
    application from the same caster. This also resolves enemy-targeted casts:
    the cast event often records the boss the Evoker had selected, while the aura
    event is the actual recipient. Ally-targeted casts keep their logged target.
@@ -276,8 +279,9 @@ shows an **enemy target** badge and the row is tinted; the buff is still
 attributed to the aura recipient, never the enemy. Casts without a matching
 buff event fall back to the raw target only when that target is a player.
 
-Each row is horizontally scrollable and lists **every** DPS character: the
-selected targets first, then faded non-picks. A `buffed targets` select filters
+Each row is horizontally scrollable and lists **every player**: pet/summon
+damage is credited to its owner via `masterData.actors[].petOwner`, and pet
+buff events are ignored. The selected targets come first, then faded non-picks. A `buffed targets` select filters
 the row to players who already had Prescience when the cast happened (`buffed`,
 back-checked from the aura intervals), or hides them. **Hide previously buffed**
 keeps the current cast target visible: it is the buff being evaluated, not a

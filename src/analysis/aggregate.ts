@@ -45,11 +45,20 @@ export function aggregateDamage(
     for (const window of fight.windows) windowsByIndex.set(window.index, window);
 
     for (const damage of fight.damage) {
+      const touched = new Set<string>();
+
       for (const entry of damage.entries) {
         if (entry.total <= 0) continue;
 
         const actor = lookup.get(Number(entry.id));
         if (!actor) continue;
+
+        // Pets/summons are separate actors in WCL's table; credit their damage
+        // to the owning player so pet classes aren't under-counted.
+        const resolvedActor =
+          actor.isPlayer === false && actor.ownerId != null
+            ? lookup.get(actor.ownerId) ?? actor
+            : actor;
 
         let byActor = buckets.get(damage.windowIndex);
         if (!byActor) {
@@ -57,10 +66,20 @@ export function aggregateDamage(
           buckets.set(damage.windowIndex, byActor);
         }
 
-        const bucket = byActor.get(actor.key) ?? { actor, total: 0, count: 0 };
+        const bucket = byActor.get(resolvedActor.key) ?? {
+          actor: resolvedActor,
+          total: 0,
+          count: 0,
+        };
         bucket.total += entry.total;
-        bucket.count += 1;
-        byActor.set(actor.key, bucket);
+        byActor.set(resolvedActor.key, bucket);
+        touched.add(resolvedActor.key);
+      }
+
+      // One sample per window, even when a player and their pets both appear.
+      const byActor = buckets.get(damage.windowIndex);
+      if (byActor) {
+        for (const key of touched) byActor.get(key)!.count += 1;
       }
     }
   }

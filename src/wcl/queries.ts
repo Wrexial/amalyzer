@@ -54,6 +54,7 @@ export const REPORT_META_QUERY = /* GraphQL */ `
             name
             type
             subType
+            petOwner
             server
           }
         }

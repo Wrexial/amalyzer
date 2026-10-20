@@ -80,3 +80,27 @@ test('dps accounts for the clipped first window', () => {
   // 100 damage over a 2s window.
   assert.equal(damagePerSecond(alpha, result[0]!.window), 50);
 });
+
+test('pet damage is credited to the owning player', () => {
+  const petLookup = new Map<number, ActorLookup>([
+    [1, { id: 1, name: 'Alpha', key: 'alpha@', isPlayer: true }],
+    [9, { id: 9, name: 'Treant', key: 'treant@', isPlayer: false, ownerId: 1 }],
+  ]);
+  const petWindows = buildWindows(12_000, { sizeMs: 6000 });
+
+  const result = aggregateDamage(
+    [
+      {
+        windows: petWindows,
+        damage: [
+          { windowIndex: 0, entries: [{ id: 1, total: 100 }, { id: 9, total: 300 }] },
+        ],
+      },
+    ],
+    petLookup,
+  );
+
+  const alpha = result[0]!.entries.find((entry) => entry.actor.name === 'Alpha')!;
+  assert.equal(alpha.total, 400);
+  assert.equal(alpha.count, 1);
+});

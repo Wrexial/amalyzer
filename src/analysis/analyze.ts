@@ -189,7 +189,12 @@ export async function analyzeReport(
         fetchPrescienceBuffEvents(client, code, fight),
       ]);
       const applications = buildPrescienceApplications(
-        buffEvents,
+        // Prescience gets copied/applied to pets in the log (Akaari's Soul,
+        // ghouls, …). Those are noise: only players can receive a useful
+        // Prescience, and pet buffs have short, misleading lifetimes.
+        buffEvents.filter(
+          (event) => event.targetID != null && lookup.get(event.targetID)?.isPlayer,
+        ),
         fight.endTime,
         prescienceDurationMs,
       );
@@ -304,12 +309,15 @@ export async function analyzeReport(
         [...lookup.values()].filter((actor) => isAugmentationEvoker(actor)).map((actor) => actor.key),
       )
     : new Set<string>();
-  const visible = excludedActors.size
-    ? aggregated.map((row) => ({
-        ...row,
-        entries: row.entries.filter((entry) => !excludedActors.has(entry.actor.key)),
-      }))
-    : aggregated;
+
+  // Pets/summons show up as their own damage-table actors. Like the original
+  // tool, keep only real players in the candidate list.
+  const visible = aggregated.map((row) => ({
+    ...row,
+    entries: row.entries.filter(
+      (entry) => entry.actor.isPlayer && !excludedActors.has(entry.actor.key),
+    ),
+  }));
 
   // The aggregated window N can come from different pulls; use the longest
   // fight's cast target/buff state for each ordinal (falling back to shorter

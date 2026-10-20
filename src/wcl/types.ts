@@ -34,6 +34,8 @@ export type ReportActor = {
   name: string;
   type: string;
   subType?: string;
+  /** Actor id of the owner when this actor is a pet/summon. */
+  petOwner?: number;
   server?: string;
 };
 

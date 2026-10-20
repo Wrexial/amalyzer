@@ -18,7 +18,7 @@ const meta = {
   actors: [
     { id: 1, name: 'Ampersand', type: 'Player', subType: 'Evoker', server: 'Tarren Mill' },
     { id: 2, name: 'Frosty', type: 'Player', subType: 'Mage', server: 'Tarren Mill' },
-    { id: 99, name: 'Treant', type: 'Pet', subType: 'Pet' },
+    { id: 99, name: 'Treant', type: 'Pet', subType: 'Pet', petOwner: 1 },
   ],
 } as unknown as ReportMeta;
 
@@ -29,6 +29,9 @@ test('actor lookup carries class and specs', () => {
   assert.deepEqual(lookup.get(1)?.specs, ['Augmentation']);
   assert.equal(lookup.get(2)?.class, 'Mage');
   assert.equal(lookup.get(99)?.class, undefined);
+  assert.equal(lookup.get(99)?.isPlayer, false);
+  assert.equal(lookup.get(99)?.ownerId, 1);
+  assert.equal(lookup.get(1)?.isPlayer, true);
 });
 
 test('detects Augmentation Evokers by class + spec', () => {
