@@ -51,3 +51,12 @@ test('picks the nearest buff event within tolerance', () => {
 
   assert.equal(matched[0]!.recipientID, 3);
 });
+
+test("does not pair a cast with another caster's buff event", () => {
+  const matched = matchPrescienceRecipients(
+    [{ timestamp: 1000, sourceID: 10, targetID: 99 }],
+    [{ timestamp: 1000, sourceID: 20, targetID: 2 }],
+  );
+
+  assert.equal(matched[0]!.recipientID, undefined);
+});

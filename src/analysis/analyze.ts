@@ -209,10 +209,12 @@ export async function analyzeReport(
         const rawTarget = cast.targetID != null ? lookup.get(cast.targetID) : undefined;
         const buffTarget =
           cast.recipientID != null ? lookup.get(cast.recipientID) : undefined;
-        // Attribute to the aura recipient; only trust the raw cast target when
-        // it is a player (otherwise it was the boss the Evoker happened to have
-        // selected, and the game auto-picked the ally).
-        const recipient = buffTarget ?? (rawTarget?.isPlayer ? rawTarget : undefined);
+        // A cast on a player is unambiguous, so trust it. Only enemy/NPC-targeted
+        // casts (WCL often records the boss the Evoker had selected) need the
+        // buff event to discover who actually received the aura. Preferring the
+        // buff event here caused ally-targeted casts to be mis-attributed when
+        // another Prescience landed nearby.
+        const recipient = rawTarget?.isPlayer ? rawTarget : buffTarget;
         const startTime = Math.round(cast.timestamp) - fight.startTime;
 
         if (recipient) {

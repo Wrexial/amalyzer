@@ -10,6 +10,8 @@
 export type PrescienceCast = {
   /** Report-relative timestamp. */
   timestamp: number;
+  /** Caster actor id (the Aug Evoker). */
+  sourceID?: number;
   /** Raw cast target from the event — may be an enemy or 0. */
   targetID?: number;
 };
@@ -17,6 +19,8 @@ export type PrescienceCast = {
 export type PrescienceBuffEvent = {
   /** Report-relative timestamp. */
   timestamp: number;
+  /** Caster actor id (the Aug Evoker). */
+  sourceID?: number;
   /** Actor the aura was applied/refreshed on. */
   targetID?: number;
 };
@@ -29,15 +33,15 @@ export type MatchedPrescienceCast = PrescienceCast & {
 /**
  * Pairs casts with buff events by timestamp.
  *
- * Each buff event is consumed once, so two Aug Evokers casting at the same time
- * still map to two distinct recipients. A cast without a nearby buff event keeps
- * `recipientID` unset; the caller can fall back to the raw `targetID` when it is
- * a player.
+ * Buff events are matched per caster (sourceID) and consumed once, so two Aug
+ * Evokers casting at the same time still map to two distinct recipients. A cast
+ * without a nearby buff event keeps `recipientID` unset; the caller can fall
+ * back to the raw `targetID` when it is a player.
  */
 export function matchPrescienceRecipients(
   casts: PrescienceCast[],
   buffs: PrescienceBuffEvent[],
-  toleranceMs = 500,
+  toleranceMs = 250,
 ): MatchedPrescienceCast[] {
   const sortedBuffs = buffs
     .filter((buff) => buff.targetID != null)
@@ -52,6 +56,11 @@ export function matchPrescienceRecipients(
 
       sortedBuffs.forEach((buff, index) => {
         if (used.has(index)) return;
+        // Only pair a cast with its own caster's buff event; with two Aug
+        // Evokers in the raid, timestamp alone is not enough.
+        if (cast.sourceID != null && buff.sourceID != null && cast.sourceID !== buff.sourceID) {
+          return;
+        }
 
         const delta = buff.timestamp - cast.timestamp;
         if (delta < -toleranceMs || delta > toleranceMs) return;

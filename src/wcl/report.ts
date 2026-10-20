@@ -156,6 +156,7 @@ export async function fetchPrescienceCasts(
       if (typeof event.timestamp !== 'number') return;
       casts.push({
         timestamp: event.timestamp,
+        ...(event.sourceID ? { sourceID: event.sourceID } : {}),
         ...(event.targetID ? { targetID: event.targetID } : {}),
       });
     });
@@ -195,7 +196,11 @@ export async function fetchPrescienceBuffEvents(
       if (event.abilityGameID != null && event.abilityGameID !== PRESCIENCE_BUFF_ID) return;
       if (event.type && event.type !== 'applybuff' && event.type !== 'refreshbuff') return;
       if (typeof event.timestamp !== 'number' || !event.targetID) return;
-      buffs.push({ timestamp: event.timestamp, targetID: event.targetID });
+      buffs.push({
+        timestamp: event.timestamp,
+        ...(event.sourceID ? { sourceID: event.sourceID } : {}),
+        targetID: event.targetID,
+      });
     });
 
     if (events.nextPageTimestamp == null || events.nextPageTimestamp <= startTime) break;
