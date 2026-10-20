@@ -224,6 +224,14 @@
       tbody tr:first-child.phase-row td { padding-top: 8px; }
 
       tr.enemy-cast-row { background: color-mix(in srgb, var(--bad) 5%, transparent); }
+      tr.extended-row { background: color-mix(in srgb, #e5cc80 7%, transparent); }
+      tr.extended-row.enemy-cast-row {
+        background: linear-gradient(
+          90deg,
+          color-mix(in srgb, #e5cc80 7%, transparent),
+          color-mix(in srgb, var(--bad) 5%, transparent)
+        );
+      }
 
       .no-target,
       .extended-mark {
@@ -241,6 +249,7 @@
       }
       .extended-mark {
         color: #e5cc80;
+        background: color-mix(in srgb, #e5cc80 15%, transparent);
         border: 1px solid color-mix(in srgb, #e5cc80 50%, transparent);
       }
 
@@ -828,6 +837,7 @@
 
           if (window.castTarget) timeCell.title = `Prescience cast on ${window.castTarget.name}`;
           if (window.castEnemyTarget) row.classList.add('enemy-cast-row');
+          if (castInfo?.extended) row.classList.add('extended-row');
           row.append(timeCell);
 
           const buffedKeys = new Set((window.buffed ?? []).map((entry) => entry.key));

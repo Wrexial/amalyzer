@@ -214,8 +214,8 @@ How it is built:
 
 The first column is two lines: `#N - start - end - duration` (e.g.
 `#2 - 0:09 - 0:28 - 18.4s`) and the Prescience target's name, class-coloured,
-with the class icon. Recasts get a yellow **extended** badge on that second
-line, and a red **no target** badge when the cast was made on a hostile/NPC.
+with the class icon. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+**no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
 `--prescience-duration`) is only a fallback for missing removal events.
