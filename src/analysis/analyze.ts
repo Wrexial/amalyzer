@@ -238,6 +238,7 @@ export async function analyzeReport(
   const castsByFightId = new Map<number, TimeWindow[]>();
   const castInfoByFightId = new Map<number, PrescienceCastInfo[]>();
   const buffedByFightId = new Map<number, { key: string; name: string }[][]>();
+  const eventSupportTotalByFightId = new Map<number, number>();
   let castsFound = 0;
 
   if (windowMode !== 'fixed') {
@@ -252,18 +253,23 @@ export async function analyzeReport(
           fight.endTime,
           shiftingSandsDurationMs,
         );
+        const supportEvents = resolveSupportEvents(
+          await fetchSupportDamageEvents(
+            client,
+            code,
+            fight,
+            SHIFTING_SANDS_BUFF_ID,
+            augmenterId,
+          ),
+        );
         const supportByStart = sumSupportByApplication(
           applications,
-          resolveSupportEvents(
-            await fetchSupportDamageEvents(
-              client,
-              code,
-              fight,
-              SHIFTING_SANDS_BUFF_ID,
-              augmenterId,
-            ),
-          ),
+          supportEvents,
           fight.startTime,
+        );
+        eventSupportTotalByFightId.set(
+          fight.id,
+          supportEvents.reduce((sum, event) => sum + event.amount, 0),
         );
         const windowApplications = augmenterId
           ? applications.filter((application) => application.sourceID === augmenterId)
@@ -374,12 +380,17 @@ export async function analyzeReport(
         fight.endTime,
         prescienceDurationMs,
       );
+      const supportEvents = resolveSupportEvents(
+        await fetchSupportDamageEvents(client, code, fight, PRESCIENCE_BUFF_ID, augmenterId),
+      );
       const supportByStart = sumSupportByApplication(
         applications,
-        resolveSupportEvents(
-          await fetchSupportDamageEvents(client, code, fight, PRESCIENCE_BUFF_ID, augmenterId),
-        ),
+        supportEvents,
         fight.startTime,
+      );
+      eventSupportTotalByFightId.set(
+        fight.id,
+        supportEvents.reduce((sum, event) => sum + event.amount, 0),
       );
       const casts = matchPrescienceRecipients(
         augmenterId ? rawCasts.filter((cast) => cast.sourceID === augmenterId) : rawCasts,
@@ -544,6 +555,8 @@ export async function analyzeReport(
               ]);
               total = prescience + Math.max(fateTalent, fateBuff);
             }
+
+            if (!total) total = eventSupportTotalByFightId.get(fight.id) ?? 0;
 
             return { key: actor.key, name: actor.name, total: Math.round(total) };
           }),
