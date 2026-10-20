@@ -1,7 +1,7 @@
 import type { TimeWindow } from '../wcl/types.ts';
 
 export type WindowOptions = {
-  /** Width of a window. Default 6000ms (one Ebon Might tick). */
+  /** Width of a window. Default 27000ms. */
   sizeMs?: number;
   /**
    * The first window starts later than the fight start, because nothing useful
@@ -19,12 +19,12 @@ export type WindowOptions = {
 /**
  * Slices a fight of `durationMs` into windows.
  *
- * With defaults and a 20s fight you get:
- *   [4000, 5999] [6000, 11999] [12000, 17999] [18000, 19999]
- * which matches Augmentator3000's `generateTimeRanges`.
+ * With defaults (27s) and a 60s fight you get:
+ *   [4000, 26999] [27000, 53999] [54000, 59999]
+ * At `sizeMs: 6000` it reproduces Augmentator3000's `generateTimeRanges`.
  */
 export function buildWindows(durationMs: number, options: WindowOptions = {}): TimeWindow[] {
-  const sizeMs = options.sizeMs ?? 6000;
+  const sizeMs = options.sizeMs ?? 27_000;
   const offsetMs = options.offsetMs ?? 4000;
 
   if (sizeMs <= 0) throw new Error('sizeMs must be > 0');

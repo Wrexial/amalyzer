@@ -3,10 +3,10 @@ import test from 'node:test';
 
 import { buildWindows, toReportTime, windowDurationMs } from '../src/analysis/windows.ts';
 
-test('windows match Augmentator3000 generateTimeRanges', () => {
+test('windows match Augmentator3000 generateTimeRanges at 6s', () => {
   // Reimplementation of the original loop:
   //   for (i = 0; i < max; i += 6000) { start = i === 0 ? i + 4000 : i; end = i + 5999 }
-  const windows = buildWindows(20_000);
+  const windows = buildWindows(20_000, { sizeMs: 6000 });
 
   assert.deepEqual(windows, [
     { index: 0, startTime: 4000, endTime: 5999 },
@@ -18,10 +18,11 @@ test('windows match Augmentator3000 generateTimeRanges', () => {
 });
 
 test('first window is clipped, the grid stays anchored to the fight start', () => {
-  const windows = buildWindows(30_000);
-  assert.equal(windowDurationMs(windows[0]!), 2000);
-  assert.equal(windowDurationMs(windows[1]!), 6000);
-  assert.equal(windows[1]!.startTime, 6000);
+  // 27s default: window 0 runs 4s..26999, window 1 starts at 27000.
+  const windows = buildWindows(60_000);
+  assert.equal(windowDurationMs(windows[0]!), 23_000);
+  assert.equal(windowDurationMs(windows[1]!), 27_000);
+  assert.equal(windows[1]!.startTime, 27_000);
 });
 
 test('fight shorter than the offset yields nothing', () => {
@@ -32,12 +33,12 @@ test('maxWindows caps the grid without shifting it', () => {
   const windows = buildWindows(60_000, { maxWindows: 2 });
   assert.deepEqual(
     windows.map((window) => window.startTime),
-    [4000, 6000],
+    [4000, 27_000],
   );
 });
 
 test('toReportTime shifts into report time', () => {
-  const windows = buildWindows(12_000);
+  const windows = buildWindows(12_000, { sizeMs: 6000 });
   const shifted = toReportTime(windows, 500_000);
   assert.equal(shifted[0]!.startTime, 504_000);
   assert.equal(shifted[1]!.endTime, 511_999);

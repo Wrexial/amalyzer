@@ -106,7 +106,7 @@ async function commandDamage(client: WCLClient, input: string, flags: Flags) {
   const result = await analyzeReport(client, input, {
     ...(flags.fight && flags.fight !== true ? { fight: String(flags.fight) } : {}),
     ...(flags.encounter ? { encounterID: numFlag(flags, 'encounter', 0) } : {}),
-    windowMs: numFlag(flags, 'window', 6000),
+    windowMs: numFlag(flags, 'window', 27_000),
     offsetMs: numFlag(flags, 'offset', 4000),
     slots: numFlag(flags, 'slots', 4),
     ...(flags['max-windows'] ? { maxWindows: numFlag(flags, 'max-windows', 0) } : {}),
@@ -180,7 +180,7 @@ function printUsage() {
       '  token',
       '  meta <report-url|code> [--encounter <id>]',
       '  damage <report-url|code> [--fight <id|last|all>] [--encounter <id>]',
-      '         [--window 6000] [--offset 4000] [--slots 4]',
+      '         [--window 27000] [--offset 4000] [--slots 4]',
       '         [--filter <expr|none>] [--max-windows <n>] [--json]',
       '  rankings <name> <serverSlug> <region> --encounter <id> --difficulty <id>',
       '         [--spec <specName>] [--partition <n>]',

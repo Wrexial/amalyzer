@@ -11,7 +11,7 @@ const lookup = new Map<number, ActorLookup>([
   [3, { id: 3, name: 'Pet', key: 'pet@' }],
 ]);
 
-const windows = buildWindows(12_000);
+const windows = buildWindows(12_000, { sizeMs: 6000 });
 
 const fightA: FightDamageInput = {
   windows,

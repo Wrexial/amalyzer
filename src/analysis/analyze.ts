@@ -88,7 +88,7 @@ export async function analyzeReport(
   const { code, fightId: urlFightId } = parseReportInput(input);
   if (!code) throw new Error('Could not find a report code in that input');
 
-  const windowMs = options.windowMs ?? 6000;
+  const windowMs = options.windowMs ?? 27_000;
   const offsetMs = options.offsetMs ?? 4000;
   const slots = options.slots ?? 4;
   const filterExpression =

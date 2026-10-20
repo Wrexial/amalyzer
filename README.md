@@ -88,7 +88,7 @@ report + fights + actor table                 fetchReportMeta()
    │  (one GraphQL request)
    ▼
 window grid for the fight                     buildWindows()        src/analysis/windows.ts
-   │  [4000,5999] [6000,11999] [12000,17999] …
+   │  [4000,26999] [27000,53999] [54000,80999] …
    ▼
 damage per window, batched aliases            fetchDamageWindows()  src/wcl/queries.ts
    │  20 `table(...)` fields per request
@@ -151,7 +151,7 @@ query DamageWindows($code: String!, $fightId: Int!, $filter: String) {
   reportData {
     report(code: $code) {
       fights(fightIDs: [$fightId]) { id startTime endTime }
-      w0: table(fightIDs: [$fightId], startTime: 504000, endTime: 505999,
+      w0: table(fightIDs: [$fightId], startTime: 504000, endTime: 530999,
                 dataType: DamageDone, filterExpression: $filter)
       # w1: … w19: …
     }
@@ -169,31 +169,33 @@ Notes that matter:
   "does not scale with our buffs" ability lists, so trinkets and flat-damage
   procs don't win the ranking. Use `--filter none` to disable.
 - Batching 20 windows per request keeps each request cheap; a 10-minute fight is
-  ~100 windows → 5 requests instead of 100.
+  ~23 windows at the 27s default → 2 requests instead of 100.
 - Rate limiting is point-based per hour (`x-ratelimit-*` headers). `WCLClient`
   exposes `lastRateLimit`, retries 429 using `Retry-After`, and optionally
   throttles to a minimum gap between requests.
 
 ## The window algorithm
 
-Defaults: 6000 ms windows, 4000 ms offset.
+Defaults: 27 000 ms windows, 4000 ms offset.
 
 ```
-[0, 4000)  ignored (pull, first casts)
-[4000, 5999]  window 0  ← clipped to 2s
-[6000, 11999] window 1
-[12000, 17999] window 2
+[0, 4000)      ignored (pull, first casts)
+[4000, 26999]  window 0  ← clipped to 23s
+[27000, 53999] window 1
+[54000, 80999] window 2
 …
 ```
 
-Why 6s: it matches the Ebon Might tick cadence the original tool plans around.
-Why the 4s offset: the first useful buff lands a few seconds into the pull.
+Why 27s: wide enough to smooth out cooldown/proc noise, short enough to still
+move between boss phases. Pass `--window 6000` for the original tool's Ebon
+Might tick cadence. Why the 4s offset: the first useful buff lands a few seconds
+into the pull.
 
 The grid stays anchored to fight start — window *n* always begins at
-`n * 6000` — so the same index means the same moment of the fight across pulls.
+`n * 27000` — so the same index means the same moment of the fight across pulls.
 Only window 0 is clipped. `buildWindows()` reproduces the original
-`generateTimeRanges()` exactly (unit-tested), and `toReportTime()` shifts the
-grid into absolute time for the query.
+`generateTimeRanges()` exactly at `sizeMs: 6000` (unit-tested), and
+`toReportTime()` shifts the grid into absolute time for the query.
 
 ## Aggregation semantics
 
