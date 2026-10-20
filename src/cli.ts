@@ -57,8 +57,12 @@ function fmt(n: number): string {
   return `${Math.round(n)}`;
 }
 
-function seconds(ms: number): string {
-  return (ms / 1000).toFixed(1);
+/** `m:ss` — report times are all relative to the pull. */
+function clock(ms: number): string {
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 function makeClient(): WCLClient {
@@ -93,10 +97,10 @@ async function commandMeta(client: WCLClient, input: string, flags: Flags) {
   console.log(`${meta.fights.length} fights, ${meta.players.length} players\n`);
 
   for (const fight of selectFights(meta, encounterFilter)) {
-    const duration = seconds(fight.endTime - fight.startTime);
+    const duration = clock(fight.endTime - fight.startTime);
     const tag = fight.kill ? 'KILL' : `${Math.round(fight.fightPercentage ?? 0)}%`;
     console.log(
-      `  #${String(fight.id).padStart(3)}  ${tag.padEnd(5)}  ${duration.padStart(6)}s  ` +
+      `  #${String(fight.id).padStart(3)}  ${tag.padEnd(5)}  ${duration.padStart(6)}  ` +
         `enc ${fight.encounterID} diff ${fight.difficulty}  ${fight.name}`,
     );
   }
@@ -130,7 +134,7 @@ async function commandDamage(client: WCLClient, input: string, flags: Flags) {
   );
 
   for (const window of windows) {
-    const label = `${seconds(window.startTime)}–${seconds(window.endTime + 1)}s`;
+    const label = `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
     const top = window.assignments
       .map((slot) => `${slot.name}${slot.priority ? '*' : ''} ${fmt(slot.dps)}`)
       .join('   ');
@@ -167,7 +171,7 @@ async function commandRankings(client: WCLClient, positional: string[], flags: F
 
   for (const ref of rankToFightRefs(rankings).slice(0, 10)) {
     console.log(
-      `  ${fmt(ref.amount).padStart(7)}  ${seconds(ref.duration).padStart(7)}s  ` +
+      `  ${fmt(ref.amount).padStart(7)}  ${clock(ref.duration).padStart(7)}  ` +
         `${ref.reportCode}#${ref.fightId}  ${ref.spec}`,
     );
   }
