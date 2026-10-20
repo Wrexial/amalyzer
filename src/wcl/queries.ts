@@ -111,7 +111,7 @@ export type DamageWindowRange = {
    * WCL reattributes buff-gained damage to the Aug evoker; querying the buff's
    * ability id for that evoker returns the credited damage.
    */
-  support?: { abilityId: number; sourceId?: number };
+  support?: { abilityId: number; sourceId?: number; targetId?: number };
 };
 
 export function buildDamageWindowsQuery(
@@ -136,6 +136,11 @@ export function buildDamageWindowsQuery(
           abilityID: ${range.support.abilityId}
           viewBy: Ability
           ${range.support.sourceId != null ? `sourceID: ${range.support.sourceId}` : ''}
+          ${
+            range.support.targetId != null
+              ? `filterExpression: "supportedActor.id = ${range.support.targetId}"`
+              : ''
+          }
         )` : ''}`,
     )
     .join('\n');

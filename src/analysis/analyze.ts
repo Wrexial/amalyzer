@@ -99,6 +99,8 @@ export type PrescienceCastInfo = {
   durationMs: number;
   /** Actor the Prescience buff actually landed on. */
   target?: { key: string; name: string };
+  /** Actor id of the buff target (used for the support-damage filter). */
+  targetId?: number;
   /** Raw cast target when it was an enemy/NPC instead of the buff recipient. */
   enemyTarget?: { name: string };
   /** True when this cast refreshed an existing Prescience on the same target. */
@@ -244,6 +246,7 @@ export async function analyzeReport(
         const targetByStart = new Map<number, { key: string; name: string }>();
         const sourceByStart = new Map<number, { key: string; name: string }>();
         const sourceIdByStart = new Map<number, number>();
+        const targetIdByStart = new Map<number, number>();
         const extendedByStart = new Set<number>();
         for (const application of windowApplications) {
           const actor = lookup.get(application.targetID);
@@ -252,6 +255,9 @@ export async function analyzeReport(
           const startTime = Math.round(application.timestamp) - fight.startTime;
           if (!targetByStart.has(startTime)) {
             targetByStart.set(startTime, { key: actor.key, name: actor.name });
+          }
+          if (!targetIdByStart.has(startTime)) {
+            targetIdByStart.set(startTime, application.targetID);
           }
           const sourceActor =
             application.sourceID != null ? lookup.get(application.sourceID) : undefined;
@@ -278,6 +284,9 @@ export async function analyzeReport(
               : {}),
             ...(sourceIdByStart.has(window.startTime)
               ? { sourceId: sourceIdByStart.get(window.startTime)! }
+              : {}),
+            ...(targetIdByStart.has(window.startTime)
+              ? { targetId: targetIdByStart.get(window.startTime)! }
               : {}),
           })),
         );
@@ -343,6 +352,7 @@ export async function analyzeReport(
       const extendedByStart = new Set<number>();
       const sourceByStart = new Map<number, { key: string; name: string }>();
       const sourceIdByStart = new Map<number, number>();
+      const targetIdByStart = new Map<number, number>();
 
       for (const cast of casts) {
         const rawTarget = cast.targetID != null ? lookup.get(cast.targetID) : undefined;
@@ -355,6 +365,7 @@ export async function analyzeReport(
 
         if (recipient && !targetByStart.has(startTime)) {
           targetByStart.set(startTime, { key: recipient.key, name: recipient.name });
+          targetIdByStart.set(startTime, recipient.id);
         }
 
         if (rawTarget && !rawTarget.isPlayer && !enemyByStart.has(startTime)) {
@@ -389,6 +400,9 @@ export async function analyzeReport(
             : {}),
           ...(sourceIdByStart.has(window.startTime)
             ? { sourceId: sourceIdByStart.get(window.startTime)! }
+            : {}),
+          ...(targetIdByStart.has(window.startTime)
+            ? { targetId: targetIdByStart.get(window.startTime)! }
             : {}),
         })),
       );
@@ -434,7 +448,9 @@ export async function analyzeReport(
 
     const castInfos = castInfoByFightId.get(fight.id) ?? [];
     const reportWindows = toReportTime(windows, fight.startTime).map((window) => {
-      const sourceId = castInfos[window.index]?.sourceId;
+      const info = castInfos[window.index];
+      const sourceId = info?.sourceId;
+      const targetId = info?.targetId;
       return {
         ...window,
         ...(sourceId != null
@@ -443,6 +459,7 @@ export async function analyzeReport(
                 abilityId:
                   windowMode === 'shifting-sands' ? SHIFTING_SANDS_BUFF_ID : PRESCIENCE_BUFF_ID,
                 sourceId,
+                ...(targetId != null ? { targetId } : {}),
               },
             }
           : {}),
