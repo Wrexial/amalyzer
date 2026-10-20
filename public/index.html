@@ -122,7 +122,8 @@
         font-size: 12px;
       }
 
-      table { width: 100%; border-collapse: collapse; }
+      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      th:first-child, td:first-child { width: 160px; }
 
       th {
         text-align: left;
@@ -141,9 +142,22 @@
 
       .time { font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
 
-      .targets { display: flex; gap: 18px; flex-wrap: wrap; }
+      .targets {
+        display: flex;
+        gap: 18px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 8px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--border) transparent;
+      }
+      .targets::-webkit-scrollbar { height: 8px; }
+      .targets::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
       .target { min-width: 150px; flex: 1 1 150px; }
+      .targets > .target { flex: 1 0 160px; min-width: 160px; }
+      .target.other { opacity: 0.6; }
+      .target.other:hover { opacity: 1; }
 
       .target-top { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; }
 
@@ -184,6 +198,20 @@
       }
       tbody tr:first-child.phase-row td { padding-top: 8px; }
 
+      tr.enemy-cast-row { background: color-mix(in srgb, var(--bad) 5%, transparent); }
+
+      .enemy-mark {
+        display: inline-block;
+        margin-left: 6px;
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--bad);
+        border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent);
+        border-radius: 4px;
+        padding: 0 3px;
+      }
+
       label.check {
         display: inline-flex;
         align-items: center;
@@ -217,6 +245,35 @@
         background: color-mix(in srgb, var(--accent) 18%, transparent);
         color: var(--accent);
       }
+
+      .view-controls select {
+        width: auto;
+        padding: 6px 8px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+
+      .buff-badge {
+        flex: none;
+        font-size: 9px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--accent-2);
+        border: 1px solid color-mix(in srgb, var(--accent-2) 45%, transparent);
+        border-radius: 4px;
+        padding: 0 3px;
+      }
+
+      .compare {
+        display: flex;
+        gap: 14px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .compare .up { color: var(--good); }
+      .compare .down { color: var(--bad); }
 
       .target-dps { font-variant-numeric: tabular-nums; color: var(--muted); }
 
@@ -315,7 +372,8 @@
           Prescience". A per-cast buff-duration window and the old fixed interval are also
           available. Filtering uses the default ability filter (drops non-scaling trinket damage);
           leave it alone unless you know why. After analysing you can switch between DPS and raw
-          damage, or hide Augmentation Evokers without re-querying.
+          damage, hide Augmentation Evokers, or compare buffed vs unbuffed targets without
+          re-querying.
         </p>
       </section>
 
@@ -333,6 +391,11 @@
             <label class="check" for="hideAug">
               <input id="hideAug" type="checkbox" /> Hide Augmentation Evokers
             </label>
+            <select id="buffFilter" aria-label="Buffed targets">
+              <option value="all">All targets</option>
+              <option value="hide">Hide buffed targets</option>
+              <option value="only">Only buffed targets</option>
+            </select>
           </div>
         </div>
         <div id="fights" style="margin-top: 12px"></div>
@@ -423,25 +486,40 @@
       const metricValue = (entry) =>
         state.metric === 'average' ? entry.average ?? 0 : entry.dps ?? 0;
 
+      /** Entries after the post-analysis filters (Aug Evokers and buffed targets). */
+      function visibleEntries(window, buffedKeys) {
+        const hideAug = $('hideAug').checked;
+        const buffFilter = $('buffFilter').value;
+
+        return window.entries.filter((entry) => {
+          if (hideAug && isAugEvoker(entry)) return false;
+          if (buffFilter === 'hide' && buffedKeys.has(entry.key)) return false;
+          if (buffFilter === 'only' && !buffedKeys.has(entry.key)) return false;
+          return true;
+        });
+      }
+
       /**
-       * Post-analysis filter: hides Augmentation Evokers and refills the slots
-       * from the same window's entries instead of re-querying WCL. The Prescience
-       * cast target is kept (or forced into the last slot) unless it was hidden.
+       * Post-analysis filters: hides Augmentation Evokers / buffed targets and
+       * refills the slots from the same window's entries instead of re-querying.
+       * The Prescience cast target is kept (or forced into the last slot) unless
+       * the active filters hide it.
        */
       function displayedAssignments(window) {
         const limit = window.assignments.length;
-        if (!$('hideAug').checked) return window.assignments;
+        if (!$('hideAug').checked && $('buffFilter').value === 'all') return window.assignments;
         if (!limit) return [];
 
-        const picked = window.entries
-          .filter((entry) => !isAugEvoker(entry))
+        const buffedKeys = new Set((window.buffed ?? []).map((entry) => entry.key));
+        const candidates = visibleEntries(window, buffedKeys);
+        const picked = candidates
           .slice(0, limit)
           .map((entry) => ({ ...entry, priority: false }));
 
         const targetKey = window.castTarget?.key;
         if (targetKey && !picked.some((entry) => entry.key === targetKey)) {
-          const targetEntry = window.entries.find((entry) => entry.key === targetKey);
-          if (targetEntry && !isAugEvoker(targetEntry)) {
+          const targetEntry = candidates.find((entry) => entry.key === targetKey);
+          if (targetEntry) {
             if (picked.length < limit) picked.push({ ...targetEntry, priority: false });
             else picked[limit - 1] = { ...targetEntry, priority: false };
           }
@@ -563,7 +641,8 @@
         $('foot').replaceChildren();
       }
 
-      $('analyze').addEventListener('click', async () => {        const report = $('report').value.trim();
+      $('analyze').addEventListener('click', async () => {
+        const report = $('report').value.trim();
         if (!report) return setStatus('Paste a report URL first.', 'error');
 
         $('analyze').disabled = true;
@@ -601,12 +680,18 @@
 
       function syncWindowMode() {
         const mode = $('windowMode').value;
-        $('prescienceMs').disabled = mode !== 'prescience-buff';
+        // The buff duration is also used for back-checking who is already
+        // buffed in interval mode, so it stays editable in both cast modes.
+        $('prescienceMs').disabled = mode === 'fixed';
         $('windowMs').disabled = mode !== 'fixed';
         $('offsetMs').disabled = mode !== 'fixed';
       }
 
       $('hideAug').addEventListener('change', () => {
+        if (state.result) render(state.result);
+      });
+
+      $('buffFilter').addEventListener('change', () => {
         if (state.result) render(state.result);
       });
 
@@ -691,38 +776,93 @@
           if (window.castTarget) timeCell.title = `Prescience cast on ${window.castTarget.name}`;
           row.append(timeCell);
 
+          const buffedKeys = new Set((window.buffed ?? []).map((entry) => entry.key));
+          const targetKey = window.castTarget?.key;
+
+          if (window.castEnemyTarget) {
+            const mark = el('span', 'enemy-mark', 'enemy target');
+            mark.title = `Cast while targeting ${window.castEnemyTarget.name}; buff credited to ${
+              window.castTarget?.name ?? 'unknown'
+            }`;
+            timeCell.append(mark);
+            row.classList.add('enemy-cast-row');
+          }
+
           const cell = el('td');
           const targets = el('div', 'targets');
-          const assignments = displayedAssignments(window);
-          const max = Math.max(...assignments.map(metricValue), 1);
 
-          assignments.forEach((slot) => {
-            const isCastTarget = window.castTarget?.key === slot.key;
+          const picked = displayedAssignments(window);
+          const pickedKeys = new Set(picked.map((card) => card.key));
+          const rest = visibleEntries(window, buffedKeys).filter(
+            (entry) => !pickedKeys.has(entry.key),
+          );
+          const cards = [...picked, ...rest];
+          const max = Math.max(...cards.map(metricValue), 1);
+
+          cards.forEach((card) => {
+            const isPick = pickedKeys.has(card.key);
+            const isCastTarget = targetKey === card.key;
+            const isBuffed = buffedKeys.has(card.key);
+
             const target = el(
               'div',
               'target' +
-                (slot.priority ? ' prio' : '') +
+                (isPick ? '' : ' other') +
+                (card.priority ? ' prio' : '') +
                 (isCastTarget ? ' prescience' : ''),
             );
             if (isCastTarget) target.title = 'Prescience cast target';
+            else if (!isPick) target.title = 'Not selected';
+
             const top = el('div', 'target-top');
-            const slug = classSlug(slot.class);
+            const slug = classSlug(card.class);
             const name = el('span', 'target-name' + (slug ? ` class-${slug}` : ''));
-            name.title = slot.class ? `${slot.name} · ${slot.class}` : slot.name;
-            const icon = classIcon(slot.class);
+            name.title = card.class ? `${card.name} · ${card.class}` : card.name;
+            const icon = classIcon(card.class);
             if (icon) name.append(icon);
-            name.append(el('span', 'nm', slot.name));
+            name.append(el('span', 'nm', card.name));
+            if (isBuffed && !isCastTarget) name.append(el('span', 'buff-badge', 'buffed'));
             top.append(name);
-            top.append(el('span', 'target-dps', fmt(metricValue(slot))));
+            top.append(el('span', 'target-dps', fmt(metricValue(card))));
+
             const bar = el('div', 'bar');
             const fill = el('i');
-            fill.style.width = `${Math.round((metricValue(slot) / max) * 100)}%`;
+            fill.style.width = `${Math.round((metricValue(card) / max) * 100)}%`;
             bar.append(fill);
             target.append(top, bar);
             targets.append(target);
           });
 
           cell.append(targets);
+
+          // Value of the just-buffed target vs the best alternative that was
+          // not buffed at this cast.
+          if (result.windowMode !== 'fixed' && window.castTarget) {
+            const targetEntry = window.entries.find((entry) => entry.key === targetKey);
+            const bestUnbuffed = window.entries.find((entry) => !buffedKeys.has(entry.key));
+
+            if (targetEntry) {
+              const compare = el('div', 'compare');
+              compare.append(
+                el('span', '', `Buffed ${targetEntry.name}: ${fmt(metricValue(targetEntry))}`),
+              );
+              if (bestUnbuffed) {
+                compare.append(
+                  el(
+                    'span',
+                    '',
+                    `Best unbuffed ${bestUnbuffed.name}: ${fmt(metricValue(bestUnbuffed))}`,
+                  ),
+                );
+                const delta = metricValue(targetEntry) - metricValue(bestUnbuffed);
+                compare.append(
+                  el('span', delta >= 0 ? 'up' : 'down', `${delta >= 0 ? '+' : ''}${fmt(delta)}`),
+                );
+              }
+              cell.append(compare);
+            }
+          }
+
           row.append(cell);
           body.append(row);
         });
@@ -734,12 +874,13 @@
         $('foot').replaceChildren(
           el('span', '', limit && points != null ? `Rate limit: ${points}/${limit} points` : ''),
           el('span', '', `Sorted by ${state.metric === 'average' ? 'damage' : 'DPS'} in each ${result.windowMode === 'fixed' ? 'window' : 'Prescience window'}; * = forced priority.`),
+          el('span', '', 'Scroll a row to see every DPS character; faded cards are not picked.'),
           el(
             'span',
             '',
             result.windowMode === 'fixed'
               ? ''
-              : 'Highlighted = the Prescience cast target, forced into the slots when outside the top targets.',
+              : 'Highlighted = Prescience target; buffed = already had Prescience at cast time; enemy target = cast target was hostile (buff credited to the aura recipient).',
           ),
         );
       }

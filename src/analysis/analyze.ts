@@ -7,12 +7,14 @@ import { DEFAULT_DAMAGE_FILTER } from '../wcl/filters.ts';
 import {
   buildActorLookup,
   fetchDamageWindows,
+  fetchPrescienceBuffEvents,
   fetchPrescienceCasts,
   fetchReportMeta,
   isAugmentationEvoker,
   parseReportInput,
   selectFights,
 } from '../wcl/report.ts';
+import { matchPrescienceRecipients } from '../wcl/prescience.ts';
 import type { ReportFight, TimeWindow, WindowDamage } from '../wcl/types.ts';
 
 /** How the analysis slices a fight into damage windows. */
@@ -62,6 +64,10 @@ export type AnalyzeWindow = {
   entries: AnalyzeWindowEntry[];
   /** Actor this row's Prescience was cast on, when known. */
   castTarget?: { key: string; name: string };
+  /** Raw cast target when WCL logged a non-player (usually an enemy boss). */
+  castEnemyTarget?: { name: string };
+  /** Actors with an active Prescience at this window's cast (cast target included). */
+  buffed?: { key: string; name: string }[];
   assignments: {
     key: string;
     name: string;
@@ -77,8 +83,10 @@ export type AnalyzeWindow = {
 export type PrescienceCastInfo = {
   /** Fight-relative start of the window this cast created. */
   startTime: number;
-  /** Actor the Prescience was cast on, when WCL logged a target. */
+  /** Actor the Prescience buff actually landed on. */
   target?: { key: string; name: string };
+  /** Raw cast target when it was an enemy/NPC instead of the buff recipient. */
+  enemyTarget?: { name: string };
 };
 
 export type AnalyzeFight = Pick<
@@ -173,11 +181,16 @@ export async function analyzeReport(
   // ordinal, which keeps "the Nth Prescience" comparable across pulls.
   const castsByFightId = new Map<number, TimeWindow[]>();
   const castInfoByFightId = new Map<number, PrescienceCastInfo[]>();
+  const buffedByFightId = new Map<number, { key: string; name: string }[][]>();
   let castsFound = 0;
 
   if (windowMode !== 'fixed') {
     for (const fight of fights) {
-      const casts = await fetchPrescienceCasts(client, code, fight);
+      const [rawCasts, buffEvents] = await Promise.all([
+        fetchPrescienceCasts(client, code, fight),
+        fetchPrescienceBuffEvents(client, code, fight),
+      ]);
+      const casts = matchPrescienceRecipients(rawCasts, buffEvents);
       const timestamps = casts.map((cast) => cast.timestamp);
       const duration = fight.endTime - fight.startTime;
       castsFound += casts.length;
@@ -189,14 +202,31 @@ export async function analyzeReport(
       castsByFightId.set(fight.id, windows);
 
       const targetByStart = new Map<number, { key: string; name: string }>();
-      for (const cast of casts) {
-        if (!cast.targetID) continue;
-        const actor = lookup.get(cast.targetID);
-        if (!actor) continue;
+      const enemyByStart = new Map<number, { name: string }>();
+      const targetCasts: { time: number; actor: { key: string; name: string } }[] = [];
 
+      for (const cast of casts) {
+        const rawTarget = cast.targetID != null ? lookup.get(cast.targetID) : undefined;
+        const buffTarget =
+          cast.recipientID != null ? lookup.get(cast.recipientID) : undefined;
+        // Attribute to the aura recipient; only trust the raw cast target when
+        // it is a player (otherwise it was the boss the Evoker happened to have
+        // selected, and the game auto-picked the ally).
+        const recipient = buffTarget ?? (rawTarget?.isPlayer ? rawTarget : undefined);
         const startTime = Math.round(cast.timestamp) - fight.startTime;
-        if (!targetByStart.has(startTime)) {
-          targetByStart.set(startTime, { key: actor.key, name: actor.name });
+
+        if (recipient) {
+          if (!targetByStart.has(startTime)) {
+            targetByStart.set(startTime, { key: recipient.key, name: recipient.name });
+          }
+          targetCasts.push({
+            time: startTime,
+            actor: { key: recipient.key, name: recipient.name },
+          });
+        }
+
+        if (rawTarget && !rawTarget.isPlayer && !enemyByStart.has(startTime)) {
+          enemyByStart.set(startTime, { name: rawTarget.name });
         }
       }
 
@@ -207,7 +237,25 @@ export async function analyzeReport(
           ...(targetByStart.has(window.startTime)
             ? { target: targetByStart.get(window.startTime)! }
             : {}),
+          ...(enemyByStart.has(window.startTime)
+            ? { enemyTarget: enemyByStart.get(window.startTime)! }
+            : {}),
         })),
+      );
+
+      // Back-check the buff: a Prescience applied within the last buff duration
+      // is still active at this cast. This is why the target of window N can be
+      // buffed by an earlier cast even when they are not in this row's slots.
+      buffedByFightId.set(
+        fight.id,
+        windows.map((window) => {
+          const active = new Map<string, { key: string; name: string }>();
+          for (const cast of targetCasts) {
+            const age = window.startTime - cast.time;
+            if (age >= 0 && age < prescienceDurationMs) active.set(cast.actor.key, cast.actor);
+          }
+          return [...active.values()];
+        }),
       );
     }
   }
@@ -255,14 +303,23 @@ export async function analyzeReport(
     : aggregated;
 
   // The aggregated window N can come from different pulls; use the longest
-  // fight's cast target for each ordinal (falling back to shorter fights).
+  // fight's cast target/buff state for each ordinal (falling back to shorter
+  // fights).
   const castTargetByIndex = new Map<number, { key: string; name: string }>();
+  const enemyTargetByIndex = new Map<number, { name: string }>();
+  const buffedByIndex = new Map<number, { key: string; name: string }[]>();
   const fightsLongestFirst = [...fights].sort(
     (a, b) => b.endTime - b.startTime - (a.endTime - a.startTime),
   );
   for (const fight of fightsLongestFirst) {
     (castInfoByFightId.get(fight.id) ?? []).forEach((cast, index) => {
       if (cast.target && !castTargetByIndex.has(index)) castTargetByIndex.set(index, cast.target);
+      if (cast.enemyTarget && !enemyTargetByIndex.has(index)) {
+        enemyTargetByIndex.set(index, cast.enemyTarget);
+      }
+    });
+    (buffedByFightId.get(fight.id) ?? []).forEach((buffed, index) => {
+      if (!buffedByIndex.has(index)) buffedByIndex.set(index, buffed);
     });
   }
 
@@ -285,7 +342,7 @@ export async function analyzeReport(
     },
     windowMode: effectiveMode,
     windowModeFallback: windowMode !== 'fixed' && effectiveMode === 'fixed',
-    ...(effectiveMode === 'prescience-buff' ? { prescienceDurationMs } : {}),
+    ...(effectiveMode !== 'fixed' ? { prescienceDurationMs } : {}),
     fights: fights.map((fight) => ({
       id: fight.id,
       encounterID: fight.encounterID,
@@ -305,6 +362,12 @@ export async function analyzeReport(
       endTime: row.window.endTime,
       ...(castTargetByIndex.has(row.window.index)
         ? { castTarget: castTargetByIndex.get(row.window.index)! }
+        : {}),
+      ...(enemyTargetByIndex.has(row.window.index)
+        ? { castEnemyTarget: enemyTargetByIndex.get(row.window.index)! }
+        : {}),
+      ...(buffedByIndex.has(row.window.index)
+        ? { buffed: buffedByIndex.get(row.window.index)! }
         : {}),
       entries: row.entries.map((entry) => ({
         key: entry.actor.key,

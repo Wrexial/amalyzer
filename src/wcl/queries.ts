@@ -261,3 +261,34 @@ export type PrescienceCastsResponse = {
     } | null;
   };
 };
+
+/**
+ * Pulls one fight's Prescience aura events. This is what tells us who actually
+ * received the buff when the cast event's target was an enemy.
+ */
+export const PRESCIENCE_BUFFS_QUERY = /* GraphQL */ `
+  query PrescienceBuffs(
+    $code: String!
+    $fightId: Int!
+    $startTime: Float!
+    $endTime: Float!
+  ) {
+    reportData {
+      report(code: $code) {
+        events(
+          dataType: Buffs
+          fightIDs: [$fightId]
+          startTime: $startTime
+          endTime: $endTime
+          abilityID: ${PRESCIENCE_BUFF_ID}
+          limit: 1000
+        ) {
+          data
+          nextPageTimestamp
+        }
+      }
+    }
+  }
+`;
+
+export type PrescienceBuffsResponse = PrescienceCastsResponse;

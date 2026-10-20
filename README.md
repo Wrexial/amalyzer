@@ -192,6 +192,11 @@ How it is built:
 1. `fetchPrescienceCasts()` asks WCL for `events(dataType: Casts,
    abilityID: 409311)` in each selected fight. The cast id is 409311; the aura
    it applies is 410089. The id is filtered server-side.
+   `fetchPrescienceBuffEvents()` also fetches the aura's `applybuff` /
+   `refreshbuff` events, and `matchPrescienceRecipients()` pairs each cast with
+   the nearest one. This matters because a cast event often records the enemy
+   the Evoker had selected rather than the ally the game auto-picked: the buff
+   event is the authoritative recipient.
 2. `buildPrescienceIntervals()` converts report-relative event timestamps to
    fight-relative windows and uses the **cast ordinal** as the window index.
    Window N is therefore the Nth Prescience of every pull, which is what lines
@@ -255,13 +260,28 @@ each window's slots from the remaining entries. Scripts can instead exclude them
 during analysis with `excludeAugmentation` / `--exclude-augmentation`, which
 removes them *before* `buildAssignments()` runs.
 
-Each window also knows the actor its Prescience was cast on (`castTarget`, from
-the cast event's `targetID`). The UI outlines that player's card, and
+Each window also knows the actor its Prescience was cast on (`castTarget`,
+resolved from the aura recipient). The UI outlines that player's card, and
 `buildAssignments()` forces them into the row: if they are outside the top N
 they replace the last pick (never a `priority` pick). Aggregated rows use the
 longest selected fight's target for that cast ordinal. With the Aug filter on,
 the same rule is re-applied to the filtered slots unless the target itself was
 hidden. The CLI marks these players with `^`.
+
+When the raw cast target was an enemy/NPC (`castEnemyTarget`), the window cell
+shows an **enemy target** badge and the row is tinted; the buff is still
+attributed to the aura recipient, never the enemy. Casts without a matching
+buff event fall back to the raw target only when that target is a player.
+
+Each row is horizontally scrollable and lists **every** DPS character: the
+selected targets first, then faded non-picks. A `buffed targets` select filters
+the row to players who already had Prescience at the cast (`buffed`, back-checked
+from earlier casts within `prescienceDurationMs`), or hides them. Back-checking
+uses the resolved recipients, so enemy-targeted casts are handled too.
+
+Below the cards each Prescience row shows `Buffed <target>: X · Best unbuffed
+<name>: Y` (plus the delta) so the value of the current buff can be compared
+directly with the best alternative that was not buffed at that moment.
 
 ## The "best logs" path
 

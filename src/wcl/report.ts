@@ -3,13 +3,17 @@ import {
   buildDamageWindowsQuery,
   flattenPlayerDetails,
   isAnalyzableFight,
+  PRESCIENCE_BUFF_ID,
+  PRESCIENCE_BUFFS_QUERY,
   PRESCIENCE_CAST_ID,
   PRESCIENCE_CASTS_QUERY,
   REPORT_META_QUERY,
   type DamageWindowsResponse,
+  type PrescienceBuffsResponse,
   type PrescienceCastsResponse,
   type ReportMetaResponse,
 } from './queries.ts';
+import type { PrescienceBuffEvent, PrescienceCast } from './prescience.ts';
 import type {
   DamageTableEntry,
   ReportFight,
@@ -121,14 +125,8 @@ export async function fetchDamageWindows(
   return results;
 }
 
-/** One Prescience cast: report-relative timestamp and the actor it was cast on. */
-export type PrescienceCast = {
-  timestamp: number;
-  targetID?: number;
-};
-
 /**
- * Report-relative timestamps (and targets) of every Prescience cast in one fight.
+ * Report-relative timestamps (and raw targets) of every Prescience cast in one fight.
  *
  * `abilityID` filters server-side, so this is one small page; the loop is only
  * there for reports with an absurd number of casts.
@@ -169,10 +167,52 @@ export async function fetchPrescienceCasts(
   return casts;
 }
 
+/**
+ * Report-relative timestamps and targets of every Prescience `applybuff` /
+ * `refreshbuff` in one fight. Used to resolve who actually received the buff
+ * when the cast was made with an enemy target.
+ */
+export async function fetchPrescienceBuffEvents(
+  client: WCLClient,
+  code: string,
+  fight: ReportFight,
+): Promise<PrescienceBuffEvent[]> {
+  const buffs: PrescienceBuffEvent[] = [];
+  let startTime = fight.startTime;
+
+  for (let page = 0; page < 10; page += 1) {
+    const data = await client.request<PrescienceBuffsResponse>(PRESCIENCE_BUFFS_QUERY, {
+      code,
+      fightId: fight.id,
+      startTime,
+      endTime: fight.endTime,
+    });
+
+    const events = data.reportData.report?.events;
+    if (!events?.data) break;
+
+    events.data.forEach((event) => {
+      if (event.abilityGameID != null && event.abilityGameID !== PRESCIENCE_BUFF_ID) return;
+      if (event.type && event.type !== 'applybuff' && event.type !== 'refreshbuff') return;
+      if (typeof event.timestamp !== 'number' || !event.targetID) return;
+      buffs.push({ timestamp: event.timestamp, targetID: event.targetID });
+    });
+
+    if (events.nextPageTimestamp == null || events.nextPageTimestamp <= startTime) break;
+    startTime = events.nextPageTimestamp;
+  }
+
+  return buffs;
+}
+
 export type ActorLookup = {
   id: number;
   name: string;
   server?: string;
+  /** WCL actor type: "Player", "NPC" or "Pet". */
+  type?: string;
+  /** True when WCL lists the actor as a player (players table or actor type). */
+  isPlayer?: boolean;
   /** Class name (e.g. "Death Knight") when WCL classified the actor as a player. */
   class?: string;
   /** Spec names seen in `playerDetails`, e.g. `["Augmentation"]`. */
@@ -211,12 +251,14 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
     id: number,
     name: string,
     server?: string,
+    actorType?: string,
     actorClass?: string,
     specs?: string[],
   ) => {
     const existing = lookup.get(id);
     const player = players.get(id);
     const resolvedServer = server ?? existing?.server ?? player?.server;
+    const resolvedType = actorType ?? existing?.type;
     const resolvedClass = actorClass ?? existing?.class ?? player?.type;
     const resolvedSpecs = specs ?? existing?.specs ?? player?.specs?.map((entry) => entry.spec);
 
@@ -224,6 +266,8 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
       id,
       name,
       ...(resolvedServer ? { server: resolvedServer } : {}),
+      ...(resolvedType ? { type: resolvedType } : {}),
+      isPlayer: resolvedType === 'Player' || Boolean(player),
       ...(resolvedClass ? { class: resolvedClass } : {}),
       ...(resolvedSpecs?.length ? { specs: resolvedSpecs } : {}),
       key: `${name.toLowerCase()}@${(resolvedServer ?? '').toLowerCase()}`,
@@ -231,13 +275,20 @@ export function buildActorLookup(meta: ReportMeta): Map<number, ActorLookup> {
   };
 
   meta.actors.forEach((actor) =>
-    add(actor.id, actor.name, actor.server, actor.type === 'Player' ? actor.subType : undefined),
+    add(
+      actor.id,
+      actor.name,
+      actor.server,
+      actor.type,
+      actor.type === 'Player' ? actor.subType : undefined,
+    ),
   );
   meta.players.forEach((player) =>
     add(
       player.id,
       player.name,
       player.server,
+      undefined,
       player.type,
       player.specs?.map((entry) => entry.spec),
     ),
