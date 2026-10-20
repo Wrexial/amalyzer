@@ -163,7 +163,7 @@ async function commandDamage(client: WCLClient, input: string, flags: Flags) {
   }
 
   if (result.windowMode !== 'fixed') {
-    console.log('\n  ^ = Prescience cast target (forced into the slots)');
+    console.log('\n  ^ = Prescience cast target');
   }
 
   const { limit, points } = result.rateLimit;

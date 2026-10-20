@@ -81,27 +81,3 @@ test('exclusions never appear', () => {
 test('topEntries respects its limit', () => {
   assert.equal(topEntries(aggregated[0]!, 2).length, 2);
 });
-
-test('a forced Prescience target outside the top N takes the last slot', () => {
-  const [assignment] = buildAssignments(aggregated, {
-    slots: 2,
-    forcedByIndex: new Map([[0, 'gamma@']]),
-  });
-
-  assert.deepEqual(
-    assignment!.slots.map((slot) => slot.name),
-    ['Alpha', 'Gamma'],
-  );
-});
-
-test('a forced Prescience target already in the top N is not duplicated', () => {
-  const [assignment] = buildAssignments(aggregated, {
-    slots: 2,
-    forcedByIndex: new Map([[0, 'beta@']]),
-  });
-
-  assert.deepEqual(
-    assignment!.slots.map((slot) => slot.name),
-    ['Alpha', 'Beta'],
-  );
-});

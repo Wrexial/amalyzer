@@ -267,12 +267,11 @@ during analysis with `excludeAugmentation` / `--exclude-augmentation`, which
 removes them *before* `buildAssignments()` runs.
 
 Each window also knows the actor its Prescience was cast on (`castTarget`,
-resolved from the aura recipient). The UI outlines that player's card, and
-`buildAssignments()` forces them into the row: if they are outside the top N
-they replace the last pick (never a `priority` pick). Aggregated rows use the
-longest selected fight's target for that cast ordinal. With the Aug filter on,
-the same rule is re-applied to the filtered slots unless the target itself was
-hidden. The CLI marks these players with `^`.
+resolved from the aura recipient). The UI outlines that player's card wherever
+they rank by damage; they are **not** forced into a slot any more, so the top N
+picks stay purely damage-ordered and the buffed target is easy to spot when
+they fall outside them. Aggregated rows use the longest selected fight's target
+for that cast ordinal. The CLI marks these players with `^`.
 
 When the raw cast target was an enemy/NPC (`castEnemyTarget`), the window cell
 shows an **enemy target** badge and the row is tinted; the buff is still

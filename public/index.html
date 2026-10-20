@@ -502,8 +502,6 @@
       /**
        * Post-analysis filters: hides Augmentation Evokers / buffed targets and
        * refills the slots from the same window's entries instead of re-querying.
-       * The Prescience cast target is kept (or forced into the last slot) unless
-       * the active filters hide it.
        */
       function displayedAssignments(window) {
         const limit = window.assignments.length;
@@ -511,21 +509,9 @@
         if (!limit) return [];
 
         const buffedKeys = new Set((window.buffed ?? []).map((entry) => entry.key));
-        const candidates = visibleEntries(window, buffedKeys);
-        const picked = candidates
+        return visibleEntries(window, buffedKeys)
           .slice(0, limit)
           .map((entry) => ({ ...entry, priority: false }));
-
-        const targetKey = window.castTarget?.key;
-        if (targetKey && !picked.some((entry) => entry.key === targetKey)) {
-          const targetEntry = candidates.find((entry) => entry.key === targetKey);
-          if (targetEntry) {
-            if (picked.length < limit) picked.push({ ...targetEntry, priority: false });
-            else picked[limit - 1] = { ...targetEntry, priority: false };
-          }
-        }
-
-        return picked;
       }
 
       function setStatus(message, kind = '') {

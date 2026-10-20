@@ -325,12 +325,8 @@ export async function analyzeReport(
     });
   }
 
-  const forcedByIndex = new Map<number, string>();
-  for (const [index, target] of castTargetByIndex) forcedByIndex.set(index, target.key);
-
   const assignments = buildAssignments(visible, {
     slots,
-    forcedByIndex,
     excluded: excludedActors,
   });
   const assignmentByIndex = new Map(assignments.map((assignment) => [assignment.window.index, assignment]));

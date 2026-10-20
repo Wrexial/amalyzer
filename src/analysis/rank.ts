@@ -27,11 +27,6 @@ export type AssignmentOptions = {
    * "always buff the raid lead / the guy with the parse".
    */
   priority?: (string | null)[];
-  /**
-   * Per-window forced picks (the Prescience cast target of that cast). If the
-   * actor is not already selected by damage, they take the last slot.
-   */
-  forcedByIndex?: ReadonlyMap<number, string>;
 };
 
 /**
@@ -83,37 +78,6 @@ export function buildAssignments(
         average: entry.average,
         priority: false,
       });
-    }
-
-    const forcedKey = options.forcedByIndex?.get(window.window.index);
-    if (
-      forcedKey &&
-      !excluded.has(forcedKey) &&
-      !chosen.some((slot) => slot.key === forcedKey)
-    ) {
-      const entry = available.find((candidate) => candidate.actor.key === forcedKey);
-      const forcedSlot: AssignmentSlot = {
-        key: forcedKey,
-        name: entry?.actor.name ?? forcedKey.split('@')[0] ?? forcedKey,
-        ...(entry?.actor.class ? { class: entry.actor.class } : {}),
-        ...(entry?.actor.specs?.length ? { specs: entry.actor.specs } : {}),
-        average: entry?.average ?? 0,
-        priority: false,
-      };
-
-      if (chosen.length < slots) {
-        chosen.push(forcedSlot);
-      } else {
-        // Replace the last slot, preferring a non-priority pick.
-        let replaceAt = chosen.length - 1;
-        for (let i = chosen.length - 1; i >= 0; i -= 1) {
-          if (!chosen[i]!.priority) {
-            replaceAt = i;
-            break;
-          }
-        }
-        chosen[replaceAt] = forcedSlot;
-      }
     }
 
     return { window: window.window, slots: chosen };
