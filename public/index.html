@@ -988,13 +988,15 @@
                   window.supportDamage,
                 )}`;
 
-                compare.append(
-                  el(
-                    'span',
-                    window.supportDamage >= 0 ? 'up' : 'down',
-                    `WCL credited: ${signed} damage (${fmt(supportDps)} DPS)`,
-                  ),
+                const credited = el(
+                  'span',
+                  window.supportDamage >= 0 ? 'up' : 'down',
+                  `WCL credited: ${signed} damage (${fmt(supportDps)} DPS)`,
                 );
+                credited.title = `${targetEntry.name}'s damage reattributed through ${
+                  window.aug?.name ?? 'the Aug'
+                }'s ${auraName} in this window`;
+                compare.append(credited);
 
                 const augKey = window.aug?.key ?? 'unknown';
                 const total = augTotals.get(augKey) ?? {
