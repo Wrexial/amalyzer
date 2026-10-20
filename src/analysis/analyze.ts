@@ -6,6 +6,7 @@ import type { WCLClient, RateLimitInfo } from '../wcl/client.ts';
 import { DEFAULT_DAMAGE_FILTER } from '../wcl/filters.ts';
 import {
   buildActorLookup,
+  fetchBuffDamageTotal,
   fetchDamageWindows,
   fetchFightDamageTotals,
   fetchPrescienceBuffEvents,
@@ -126,6 +127,8 @@ export type AnalyzeFight = Pick<
   casts?: PrescienceCastInfo[];
   /** WCL credited damage for each Aug Evoker in this fight (personal + all buffs). */
   augDamage?: { key: string; name: string; total: number }[];
+  /** Whole-fight WCL credit for the selected buff (Prescience/Shifting Sands). */
+  buffCredit?: { key: string; name: string; total: number }[];
 };
 
 export type AnalyzeResult = {
@@ -217,6 +220,10 @@ export async function analyzeReport(
     (actor) => isAugmentationEvoker(actor) && (augmenterId == null || actor.id === augmenterId),
   );
   const augDamageByFightId = new Map<
+    number,
+    { key: string; name: string; total: number }[]
+  >();
+  const buffCreditByFightId = new Map<
     number,
     { key: string; name: string; total: number }[]
   >();
@@ -529,6 +536,23 @@ export async function analyzeReport(
           total: Math.round(totals.get(actor.id) ?? 0),
         })),
       );
+
+      if (effectiveMode !== 'fixed') {
+        const buffAbilityId =
+          effectiveMode === 'shifting-sands' ? SHIFTING_SANDS_BUFF_ID : PRESCIENCE_BUFF_ID;
+        buffCreditByFightId.set(
+          fight.id,
+          await Promise.all(
+            augmenters.map(async (actor) => ({
+              key: actor.key,
+              name: actor.name,
+              total: Math.round(
+                await fetchBuffDamageTotal(client, code, fight, buffAbilityId, actor.id),
+              ),
+            })),
+          ),
+        );
+      }
     }
 
     const damage = await fetchDamageWindows(client, code, fight, toReportTime(windows, fight.startTime), {
@@ -628,6 +652,9 @@ export async function analyzeReport(
         : {}),
       ...(augDamageByFightId.has(fight.id)
         ? { augDamage: augDamageByFightId.get(fight.id)! }
+        : {}),
+      ...(buffCreditByFightId.has(fight.id)
+        ? { buffCredit: buffCreditByFightId.get(fight.id)! }
         : {}),
     })),
     windows: visible.map((row) => ({

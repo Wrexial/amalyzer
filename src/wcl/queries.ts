@@ -387,3 +387,29 @@ export type FightDamageTotalsResponse = {
     report: { total: DamageTableJson | null } | null;
   };
 };
+
+/** Whole-fight reattributed damage for one buff (ability + Aug). */
+export const BUFF_DAMAGE_TOTAL_QUERY = /* GraphQL */ `
+  query BuffDamageTotal(
+    $code: String!
+    $fightId: Int!
+    $startTime: Float!
+    $endTime: Float!
+    $abilityID: Float!
+    $sourceID: Int!
+  ) {
+    reportData {
+      report(code: $code) {
+        total: table(
+          dataType: DamageDone
+          fightIDs: [$fightId]
+          startTime: $startTime
+          endTime: $endTime
+          abilityID: $abilityID
+          sourceID: $sourceID
+          viewBy: Ability
+        )
+      }
+    }
+  }
+`;

@@ -1,6 +1,7 @@
 import type { WCLClient } from './client.ts';
 import {
   buildDamageWindowsQuery,
+  BUFF_DAMAGE_TOTAL_QUERY,
   FIGHT_DAMAGE_TOTALS_QUERY,
   flattenPlayerDetails,
   isAnalyzableFight,
@@ -253,6 +254,32 @@ export async function fetchFightDamageTotals(
     totals.set(Number(entry.id), entry.total ?? 0);
   }
   return totals;
+}
+
+/**
+ * Whole-fight WCL-credited damage for one buff (ability + caster). This is the
+ * value WCL's damage page shows for that buff row.
+ */
+export async function fetchBuffDamageTotal(
+  client: WCLClient,
+  code: string,
+  fight: ReportFight,
+  abilityId: number,
+  sourceId: number,
+): Promise<number> {
+  const data = await client.request<FightDamageTotalsResponse>(BUFF_DAMAGE_TOTAL_QUERY, {
+    code,
+    fightId: fight.id,
+    startTime: fight.startTime,
+    endTime: fight.endTime,
+    abilityID: abilityId,
+    sourceID: sourceId,
+  });
+
+  const table = data.reportData.report?.total;
+  const parsed = table?.data ?? table;
+  if (typeof parsed?.total === 'number') return parsed.total;
+  return (parsed?.entries ?? []).reduce((sum, entry) => sum + (entry.total ?? 0), 0);
 }
 
 /**

@@ -912,8 +912,6 @@
         let theoreticalGain = 0;
         let theoreticalDamage = 0;
         let theoreticalWindows = 0;
-        const augTotals = new Map();
-
         let currentPhase;
         result.windows.forEach((window) => {
           // In Prescience mode the nth row is the nth cast, so use the reference
@@ -1081,17 +1079,6 @@
                 }'s ${auraName} in this window`;
                 compare.append(credited);
 
-                const augKey = window.aug?.key ?? 'unknown';
-                const total = augTotals.get(augKey) ?? {
-                  name: window.aug?.name ?? 'Unknown Aug',
-                  damage: 0,
-                  dps: 0,
-                  windows: 0,
-                };
-                total.damage += window.supportDamage;
-                total.dps += supportDps;
-                total.windows += 1;
-                augTotals.set(augKey, total);
               }
               compare.append(
                 el(
@@ -1137,28 +1124,26 @@
             '',
             result.windowMode === 'fixed'
               ? ''
-              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; WCL credited = this buff's support damage for the buffed target; WCL total = the Aug's full credited damage for the fight (personal + all buff attribution).`,
+              : `Highlighted = ${auraName} target; buffed = already had ${auraName} when this window started; no target = cast was made on a hostile/NPC; extended = recast that extended an existing ${auraName}; WCL credited = this buff's support damage for the buffed target; <buff> credited = whole-fight WCL row for that buff; Aug total = personal + all buff attribution.`,
           ),
         ];
 
-        for (const total of augTotals.values()) {
-          if (!total.windows) continue;
-          footItems.push(
-            el(
-              'span',
-              'aug-gain',
-              `Selected buff credit → ${total.name}: ${total.damage >= 0 ? '+' : ''}${fmt(total.damage)} damage · ${fmt(total.dps / total.windows)} DPS avg per window`,
-            ),
-          );
-        }
-
         for (const fight of result.fights) {
+          for (const aug of fight.buffCredit ?? []) {
+            footItems.push(
+              el(
+                'span',
+                'aug-gain',
+                `${auraName} credited #${fight.id} → ${aug.name}: ${aug.total >= 0 ? '+' : ''}${fmt(aug.total)} damage (WCL)`,
+              ),
+            );
+          }
           for (const aug of fight.augDamage ?? []) {
             footItems.push(
               el(
                 'span',
                 'aug-gain',
-                `WCL total #${fight.id} → ${aug.name}: ${aug.total >= 0 ? '+' : ''}${fmt(aug.total)} damage`,
+                `Aug total #${fight.id} → ${aug.name}: ${aug.total >= 0 ? '+' : ''}${fmt(aug.total)} damage (personal + all buffs)`,
               ),
             );
           }

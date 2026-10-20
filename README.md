@@ -228,12 +228,19 @@ support events for that exact target/application; targets with no reattributable
 damage (or WCL-excluded sources such as tank/healing attribution) simply have
 no line.
 
-The footer also shows **WCL total** per fight: a whole-fight `DamageDone` table
-with no filter, read from the Aug actor's entry. That is the same number as the
-Aug's damage-done page on Warcraft Logs — personal damage **plus** Ebon Might,
-Prescience, Shifting Sands and every other source of reattribution. It is much
-larger than `Selected buff credit`, which deliberately counts only the chosen
-buff's support for the rows on screen. Recasts get a yellow **extended** badge and a yellow row tint, and a red
+The footer has two whole-fight WCL numbers per fight:
+
+- **`<buff> credited #fight`** — `table(dataType: DamageDone, abilityID=410089/413984,
+sourceID=<Aug>, viewBy: Ability)` for the whole fight. This is the same row
+Warcraft Logs shows for Prescience/Shifting Sands on the Aug's damage page.
+- **`Aug total #fight`** — the unfiltered whole-fight damage table for the Aug
+actor, i.e. personal damage plus Ebon Might, Prescience, Shifting Sands and any
+other reattribution.
+
+The per-row `WCL credited` remains the target-specific event share (bucketed by
+`supportID` + application), so its sum is not guaranteed to equal the whole-fight
+buff row — WCL can include pet/delayed/Fate Mirror support that isn't a separate
+player application. Recasts get a yellow **extended** badge and a yellow row tint, and a red
 **no target** badge when the cast was made on a hostile/NPC.
 
 `prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
