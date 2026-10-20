@@ -46,6 +46,8 @@ export type MatchedPrescienceCast = PrescienceCast & {
   applicationEndTimestamp?: number;
   /** True when the cast refreshed an existing Prescience on that target. */
   extended?: boolean;
+  /** Report-relative timestamp of the matched aura application (may differ from the cast). */
+  applicationTimestamp?: number;
 };
 
 /**
@@ -171,6 +173,7 @@ export function matchPrescienceRecipients(
       return {
         ...cast,
         recipientID: application.targetID,
+        applicationTimestamp: application.timestamp,
         applicationEndTimestamp: application.endTimestamp,
         ...(application.extended ? { extended: true } : {}),
       };

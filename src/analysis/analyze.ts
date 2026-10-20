@@ -427,15 +427,23 @@ export async function analyzeReport(
         }
       }
 
-      const supportFor = (startTime: number) => {
+      // The cast and the aura application can be a few ms apart, so support is
+      // keyed by the application timestamp but must land on the cast's window.
+      const supportByWindowStart = new Map<number, number>();
+      for (const cast of casts) {
+        const startTime = Math.round(cast.timestamp) - fight.startTime;
         const targetId = targetIdByStart.get(startTime);
-        return targetId != null ? supportByStart.get(`${startTime}:${targetId}`) : undefined;
-      };
+        if (cast.applicationTimestamp == null || targetId == null) continue;
+
+        const applicationStart = Math.round(cast.applicationTimestamp) - fight.startTime;
+        const supportDamage = supportByStart.get(`${applicationStart}:${targetId}`);
+        if (supportDamage != null) supportByWindowStart.set(startTime, supportDamage);
+      }
 
       castInfoByFightId.set(
         fight.id,
         windows.map((window) => {
-          const supportDamage = supportFor(window.startTime);
+          const supportDamage = supportByWindowStart.get(window.startTime);
           return {
             startTime: window.startTime,
             durationMs: window.endTime - window.startTime + 1,

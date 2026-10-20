@@ -78,6 +78,7 @@ test('attributes an enemy-targeted cast to the buff application', () => {
       timestamp: 1000,
       targetID: 99,
       recipientID: 2,
+      applicationTimestamp: 1002,
       applicationEndTimestamp: 19_002,
     },
   ]);
