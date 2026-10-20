@@ -89,7 +89,7 @@ report + fights + actor table                 fetchReportMeta()
    │  (one GraphQL request)
    ▼
 window grid for the fight                     buildPrescienceWindows()  src/analysis/windows.ts
-   │  one 18s buff window per Prescience cast
+   │  one measured buff window per Prescience cast
    ▼
 damage per window, batched aliases            fetchDamageWindows()  src/wcl/queries.ts
    │  20 `table(...)` fields per request
@@ -177,49 +177,47 @@ Notes that matter:
 
 ## Damage windows
 
-By default windows are not fixed intervals: each **Prescience cast** opens a
-window that lasts the buff duration (18s), so the damage shown is what happened
-while that person was buffed.
+By default each **Prescience cast** opens a window that lasts as long as the aura
+actually lasted in the log: `applybuff` starts it, `removebuff` ends it (death,
+dispel, or normal expiry). A `refreshbuff` starts a new window but shares the
+aura's end, since the target never stopped being buffed. The fallback duration is
+only used when the removal is missing from the log.
 
 ```
-Prescience cast @ 0:04  -> [0:04, 0:22)
-Prescience cast @ 0:10  -> [0:10, 0:28)
-Prescience cast @ 0:16  -> [0:16, 0:34)
-…
+Prescience cast @ 0:04, aura removed @ 0:22  -> [0:04, 0:22)
+Prescience cast @ 0:10, refreshed @ 0:16, removed @ 0:28 -> [0:10, 0:28)
 ```
 
-Casts are ~6s apart while the buff lasts 18s, so **buff windows overlap**. Each
-row is still an independent "what did the raid do while this cast's buff was up"
-measurement. The window is clipped to the fight end.
+Windows overlap when casts are closer together than the aura lasts (the usual
+case: ~6s cadence, 18s+ buff). Each row is an independent "what did the raid do
+while this cast's buff was up" measurement, clipped to the fight end.
 
 How it is built:
 
 1. `fetchPrescienceCasts()` asks WCL for `events(dataType: Casts,
-   abilityID: 409311)` in each selected fight. The cast id is 409311; the aura
-   it applies is 410089. The id is filtered server-side.
-   `fetchPrescienceBuffEvents()` also fetches the aura's `applybuff` /
-   `refreshbuff` events, and `matchPrescienceRecipients()` pairs each cast with
-   the nearest one from the same caster. This matters because a cast event often
-   records the enemy the Evoker had selected rather than the ally the game
-   auto-picked: the buff event is the authoritative recipient for those casts.
-   Casts whose raw target is already a player keep that target.
-2. `buildPrescienceWindows()` converts report-relative event timestamps to
-   fight-relative windows, clips the last one to the fight end, and uses the
-   **cast ordinal** as the window index. Window N is therefore the Nth
-   Prescience of every pull, which is what lines up across pulls.
+   abilityID: 409311)`; `fetchPrescienceBuffEvents()` fetches the aura events
+   (`applybuff`, `refreshbuff`, `removebuff`) for 410089.
+   `buildPrescienceApplications()` turns those into intervals with real end
+   times, and `matchPrescienceRecipients()` pairs each cast with the nearest
+   application from the same caster. This also resolves enemy-targeted casts:
+   the cast event often records the boss the Evoker had selected, while the aura
+   event is the actual recipient. Ally-targeted casts keep their logged target.
+2. `buildPrescienceWindows()` uses each cast's measured aura end (falling back
+   to `prescienceDurationMs` when there is no removal), clips to the fight, and
+   uses the **cast ordinal** as the window index. Window N is the Nth Prescience
+   of every pull.
 3. There is no start offset: the first window begins at the first cast.
 
-Other modes are available via `windowMode`:
+The first column renders that as `#N - cast time - duration`, e.g.
+`#2 - 0:09 - 18.4s`.
 
-- `prescience` — each window runs from one cast to the next, with the last one
-  running to the end of the fight. Use this for "what happened between casts".
-- `fixed` — the old clock grid: 27 000 ms windows, 4000 ms offset, anchored to
-  fight start. `buildWindows()` still reproduces the original
-  `generateTimeRanges()` exactly at `sizeMs: 6000`. Pass
-  `--window-mode fixed` (or just `--window`/`--offset`) to force it.
+`prescienceDurationMs` (default 18 000 ms, UI "Fallback buff (ms)",
+`--prescience-duration`) is only a fallback for missing removal events.
 
-`prescienceDurationMs` (default 18 000 ms) is the buff length, editable in the UI
-and via `--prescience-duration`. It has changed across patches.
+The old clock grid is still available as `windowMode: 'fixed'`: 27 000 ms
+windows, 4000 ms offset, anchored to fight start (`buildWindows()` reproduces
+the original `generateTimeRanges()` at `sizeMs: 6000`). Pass
+`--window-mode fixed` (or just `--window`/`--offset`).
 
 If no casts are found in any selected fight (no Augmentation Evoker was logged),
 the analysis falls back to the fixed grid and reports `windowModeFallback`.
@@ -280,9 +278,11 @@ buff event fall back to the raw target only when that target is a player.
 
 Each row is horizontally scrollable and lists **every** DPS character: the
 selected targets first, then faded non-picks. A `buffed targets` select filters
-the row to players who already had Prescience at the cast (`buffed`, back-checked
-from earlier casts within `prescienceDurationMs`), or hides them. Back-checking
-uses the resolved recipients, so enemy-targeted casts are handled too.
+the row to players who already had Prescience when the cast happened (`buffed`,
+back-checked from the aura intervals), or hides them. **Hide previously buffed**
+keeps the current cast target visible: it is the buff being evaluated, not a
+leftover from an earlier cast. Back-checking uses the resolved recipients, so
+enemy-targeted casts are handled too.
 
 Below the cards each Prescience row shows `Buffed <target>: X · Best unbuffed
 <name>: Y` (plus the delta) so the value of the current buff can be compared

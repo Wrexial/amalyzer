@@ -1,7 +1,7 @@
 import { damagePerSecond, aggregateDamage } from './aggregate.ts';
 import { fightPhases, type PhaseBoundary } from './phases.ts';
 import { buildAssignments } from './rank.ts';
-import { buildPrescienceIntervals, buildPrescienceWindows, buildWindows, toReportTime } from './windows.ts';
+import { buildPrescienceWindows, buildWindows, toReportTime } from './windows.ts';
 import type { WCLClient, RateLimitInfo } from '../wcl/client.ts';
 import { DEFAULT_DAMAGE_FILTER } from '../wcl/filters.ts';
 import {
@@ -14,23 +14,22 @@ import {
   parseReportInput,
   selectFights,
 } from '../wcl/report.ts';
-import { matchPrescienceRecipients } from '../wcl/prescience.ts';
+import { buildPrescienceApplications, matchPrescienceRecipients } from '../wcl/prescience.ts';
 import type { ReportFight, TimeWindow, WindowDamage } from '../wcl/types.ts';
 
 /** How the analysis slices a fight into damage windows. */
-export type WindowMode = 'prescience' | 'prescience-buff' | 'fixed';
+export type WindowMode = 'prescience-buff' | 'fixed';
 
 export type AnalyzeOptions = {
   /** Fight id, comma-separated ids, `last`, or `all`. Defaults to the last kill. */
   fight?: string;
   encounterID?: number;
   /**
-   * `prescience-buff` (default): one window per cast, lasting the buff duration.
-   * `prescience`: one window per cast, ending at the next cast.
-   * `fixed`: the old clock-based grid.
+   * `prescience-buff` (default): one window per cast, lasting that aura's actual
+   * duration. `fixed`: the old clock-based grid.
    */
   windowMode?: WindowMode;
-  /** Length of the Prescience buff in ms, only used by `prescience-buff`. Default 18000. */
+  /** Fallback buff length in ms, used only when the log has no removal event. */
   prescienceDurationMs?: number;
   windowMs?: number;
   offsetMs?: number;
@@ -83,6 +82,8 @@ export type AnalyzeWindow = {
 export type PrescienceCastInfo = {
   /** Fight-relative start of the window this cast created. */
   startTime: number;
+  /** How long the aura actually lasted (fight-relative, clipped to the fight). */
+  durationMs: number;
   /** Actor the Prescience buff actually landed on. */
   target?: { key: string; name: string };
   /** Raw cast target when it was an enemy/NPC instead of the buff recipient. */
@@ -149,10 +150,7 @@ export async function analyzeReport(
   const { code, fightId: urlFightId } = parseReportInput(input);
   if (!code) throw new Error('Could not find a report code in that input');
 
-  const windowMode: WindowMode =
-    options.windowMode === 'fixed' || options.windowMode === 'prescience'
-      ? options.windowMode
-      : 'prescience-buff';
+  const windowMode: WindowMode = options.windowMode === 'fixed' ? 'fixed' : 'prescience-buff';
   const prescienceDurationMs = options.prescienceDurationMs ?? 18_000;
   const windowMs = options.windowMs ?? 27_000;
   const offsetMs = options.offsetMs ?? 4000;
@@ -190,41 +188,42 @@ export async function analyzeReport(
         fetchPrescienceCasts(client, code, fight),
         fetchPrescienceBuffEvents(client, code, fight),
       ]);
-      const casts = matchPrescienceRecipients(rawCasts, buffEvents);
-      const timestamps = casts.map((cast) => cast.timestamp);
+      const applications = buildPrescienceApplications(
+        buffEvents,
+        fight.endTime,
+        prescienceDurationMs,
+      );
+      const casts = matchPrescienceRecipients(rawCasts, applications);
       const duration = fight.endTime - fight.startTime;
       castsFound += casts.length;
 
-      const windows =
-        windowMode === 'prescience-buff'
-          ? buildPrescienceWindows(timestamps, fight.startTime, duration, prescienceDurationMs)
-          : buildPrescienceIntervals(timestamps, fight.startTime, duration);
+      const windows = buildPrescienceWindows(
+        casts.map((cast) => ({
+          timestamp: cast.timestamp,
+          ...(cast.applicationEndTimestamp != null
+            ? { endTimestamp: cast.applicationEndTimestamp }
+            : {}),
+        })),
+        fight.startTime,
+        duration,
+        prescienceDurationMs,
+      );
       castsByFightId.set(fight.id, windows);
 
       const targetByStart = new Map<number, { key: string; name: string }>();
       const enemyByStart = new Map<number, { name: string }>();
-      const targetCasts: { time: number; actor: { key: string; name: string } }[] = [];
 
       for (const cast of casts) {
         const rawTarget = cast.targetID != null ? lookup.get(cast.targetID) : undefined;
-        const buffTarget =
-          cast.recipientID != null ? lookup.get(cast.recipientID) : undefined;
+        const buffTarget = cast.recipientID != null ? lookup.get(cast.recipientID) : undefined;
         // A cast on a player is unambiguous, so trust it. Only enemy/NPC-targeted
         // casts (WCL often records the boss the Evoker had selected) need the
-        // buff event to discover who actually received the aura. Preferring the
-        // buff event here caused ally-targeted casts to be mis-attributed when
-        // another Prescience landed nearby.
+        // buff event to discover who actually received the aura.
         const recipient = rawTarget?.isPlayer ? rawTarget : buffTarget;
         const startTime = Math.round(cast.timestamp) - fight.startTime;
 
-        if (recipient) {
-          if (!targetByStart.has(startTime)) {
-            targetByStart.set(startTime, { key: recipient.key, name: recipient.name });
-          }
-          targetCasts.push({
-            time: startTime,
-            actor: { key: recipient.key, name: recipient.name },
-          });
+        if (recipient && !targetByStart.has(startTime)) {
+          targetByStart.set(startTime, { key: recipient.key, name: recipient.name });
         }
 
         if (rawTarget && !rawTarget.isPlayer && !enemyByStart.has(startTime)) {
@@ -236,6 +235,7 @@ export async function analyzeReport(
         fight.id,
         windows.map((window) => ({
           startTime: window.startTime,
+          durationMs: window.endTime - window.startTime + 1,
           ...(targetByStart.has(window.startTime)
             ? { target: targetByStart.get(window.startTime)! }
             : {}),
@@ -245,17 +245,24 @@ export async function analyzeReport(
         })),
       );
 
-      // Back-check the buff: a Prescience applied within the last buff duration
-      // is still active at this cast. This is why the target of window N can be
-      // buffed by an earlier cast even when they are not in this row's slots.
+      // Back-check from the aura applications themselves (apply/remove/refresh),
+      // so the buffed set uses actual lifetimes instead of a fixed assumption.
       buffedByFightId.set(
         fight.id,
         windows.map((window) => {
           const active = new Map<string, { key: string; name: string }>();
-          for (const cast of targetCasts) {
-            const age = window.startTime - cast.time;
-            if (age >= 0 && age < prescienceDurationMs) active.set(cast.actor.key, cast.actor);
+          for (const application of applications) {
+            const start = application.timestamp - fight.startTime;
+            const end = application.endTimestamp - fight.startTime;
+            if (start > window.startTime || window.startTime >= end) continue;
+
+            const actor = lookup.get(application.targetID);
+            if (actor) active.set(actor.key, { key: actor.key, name: actor.name });
           }
+
+          const currentTarget = targetByStart.get(window.startTime);
+          if (currentTarget) active.set(currentTarget.key, currentTarget);
+
           return [...active.values()];
         }),
       );

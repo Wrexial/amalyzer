@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  buildPrescienceIntervals,
   buildPrescienceWindows,
   buildWindows,
   toReportTime,
@@ -43,24 +42,13 @@ test('maxWindows caps the grid without shifting it', () => {
   );
 });
 
-test('prescience intervals run from each cast to the next, last to fight end', () => {
-  const windows = buildPrescienceIntervals([100_000, 106_000, 118_000], 100_000, 60_000);
-
-  assert.deepEqual(windows, [
-    { index: 0, startTime: 0, endTime: 5_999 },
-    { index: 1, startTime: 6_000, endTime: 17_999 },
-    { index: 2, startTime: 18_000, endTime: 59_999 },
-  ]);
-});
-
-test('prescience intervals dedupe and ignore out-of-fight casts', () => {
-  const windows = buildPrescienceIntervals([160_000, 100_000, 100_000], 100_000, 20_000);
-
-  assert.deepEqual(windows, [{ index: 0, startTime: 0, endTime: 19_999 }]);
-});
-
-test('prescience windows start at each cast and last the buff duration', () => {
-  const windows = buildPrescienceWindows([100_000, 106_000, 118_000], 100_000, 60_000, 18_000);
+test('prescience windows use the fallback duration when the aura end is unknown', () => {
+  const windows = buildPrescienceWindows(
+    [{ timestamp: 100_000 }, { timestamp: 106_000 }, { timestamp: 118_000 }],
+    100_000,
+    60_000,
+    18_000,
+  );
 
   assert.deepEqual(windows, [
     { index: 0, startTime: 0, endTime: 17_999 },
@@ -69,8 +57,28 @@ test('prescience windows start at each cast and last the buff duration', () => {
   ]);
 });
 
+test("prescience windows use the aura's measured end", () => {
+  const windows = buildPrescienceWindows(
+    [{ timestamp: 100_000, endTimestamp: 105_000 }],
+    100_000,
+    60_000,
+    18_000,
+  );
+
+  assert.deepEqual(windows, [{ index: 0, startTime: 0, endTime: 4_999 }]);
+});
+
 test('prescience windows are sorted, deduplicated and clipped to the fight', () => {
-  const windows = buildPrescienceWindows([112_000, 100_000, 100_000], 100_000, 20_000, 18_000);
+  const windows = buildPrescienceWindows(
+    [
+      { timestamp: 112_000, endTimestamp: 140_000 },
+      { timestamp: 100_000 },
+      { timestamp: 100_000 },
+    ],
+    100_000,
+    20_000,
+    18_000,
+  );
 
   assert.deepEqual(windows, [
     { index: 0, startTime: 0, endTime: 17_999 },

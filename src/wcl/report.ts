@@ -169,9 +169,10 @@ export async function fetchPrescienceCasts(
 }
 
 /**
- * Report-relative timestamps and targets of every Prescience `applybuff` /
- * `refreshbuff` in one fight. Used to resolve who actually received the buff
- * when the cast was made with an enemy target.
+ * Report-relative timestamps and targets of every Prescience aura event
+ * (`applybuff`, `refreshbuff`, `removebuff`) in one fight. Used to resolve who
+ * actually received the buff when the cast was made with an enemy target, and
+ * to track how long the aura lasted.
  */
 export async function fetchPrescienceBuffEvents(
   client: WCLClient,
@@ -194,10 +195,20 @@ export async function fetchPrescienceBuffEvents(
 
     events.data.forEach((event) => {
       if (event.abilityGameID != null && event.abilityGameID !== PRESCIENCE_BUFF_ID) return;
-      if (event.type && event.type !== 'applybuff' && event.type !== 'refreshbuff') return;
+      if (
+        event.type &&
+        event.type !== 'applybuff' &&
+        event.type !== 'refreshbuff' &&
+        event.type !== 'removebuff' &&
+        event.type !== 'removedebuff' &&
+        event.type !== 'applybuffstack'
+      ) {
+        return;
+      }
       if (typeof event.timestamp !== 'number' || !event.targetID) return;
       buffs.push({
         timestamp: event.timestamp,
+        ...(event.type ? { type: event.type } : {}),
         ...(event.sourceID ? { sourceID: event.sourceID } : {}),
         targetID: event.targetID,
       });

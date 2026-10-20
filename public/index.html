@@ -123,7 +123,7 @@
       }
 
       table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      th:first-child, td:first-child { width: 160px; }
+      th:first-child, td:first-child { width: 205px; }
 
       th {
         text-align: left;
@@ -339,12 +339,11 @@
             <label for="windowMode">Window source</label>
             <select id="windowMode">
               <option value="prescience-buff" selected>Prescience buff window</option>
-              <option value="prescience">Prescience casts (to next cast)</option>
               <option value="fixed">Fixed interval</option>
             </select>
           </div>
           <div>
-            <label for="prescienceMs">Prescience buff (ms)</label>
+            <label for="prescienceMs">Fallback buff (ms)</label>
             <input id="prescienceMs" type="number" value="18000" min="1000" step="500" />
           </div>
           <div>
@@ -367,13 +366,12 @@
           <button id="logout" class="ghost" style="margin-left: auto">Disconnect</button>
         </div>
         <p class="hint">
-          <code>Load fights</code> fills the fight list from the report. By default each window is a
-          Prescience cast plus its buff duration (18s), so the damage shown is what happened while
-          that person was buffed. Cast-to-next-cast intervals and the old fixed interval are also
-          available. Filtering uses the default ability filter (drops non-scaling trinket damage);
-          leave it alone unless you know why. After analysing you can switch between DPS and raw
-          damage, hide Augmentation Evokers, or compare buffed vs unbuffed targets without
-          re-querying.
+          <code>Load fights</code> fills the fight list from the report. Each window is a Prescience
+          cast plus the aura's measured lifetime (the fallback 18s is only used when the log is
+          missing the removal), so the damage shown is what happened while that person was buffed.
+          Filtering uses the default ability filter (drops non-scaling trinket damage); leave it
+          alone unless you know why. After analysing you can switch between DPS and raw damage, hide
+          Augmentation Evokers, or compare buffed vs unbuffed targets without re-querying.
         </p>
       </section>
 
@@ -393,7 +391,7 @@
             </label>
             <select id="buffFilter" aria-label="Buffed targets">
               <option value="all">All targets</option>
-              <option value="hide">Hide buffed targets</option>
+              <option value="hide">Hide previously buffed</option>
               <option value="only">Only buffed targets</option>
             </select>
           </div>
@@ -476,11 +474,7 @@
         (entry?.specs || []).some((spec) => /^augmentation$/i.test(spec));
 
       const windowModeLabel = (mode) =>
-        mode === 'prescience'
-          ? 'Prescience intervals'
-          : mode === 'prescience-buff'
-            ? 'Prescience buff windows'
-            : 'windows';
+        mode === 'prescience-buff' ? 'Prescience buff windows' : 'windows';
 
       /** Value for the currently selected metric. */
       const metricValue = (entry) =>
@@ -493,7 +487,10 @@
 
         return window.entries.filter((entry) => {
           if (hideAug && isAugEvoker(entry)) return false;
-          if (buffFilter === 'hide' && buffedKeys.has(entry.key)) return false;
+          // The target of this row's cast is the one that is *currently* buffed;
+          // "hide buffed" only means "already had it before this cast".
+          const isCastTarget = window.castTarget?.key === entry.key;
+          if (buffFilter === 'hide' && !isCastTarget && buffedKeys.has(entry.key)) return false;
           if (buffFilter === 'only' && !buffedKeys.has(entry.key)) return false;
           return true;
         });
@@ -701,7 +698,7 @@
         const table = el('table');
         const head = el('thead');
         const headRow = el('tr');
-        const windowHeading = result.windowMode === 'fixed' ? 'Window' : 'Prescience';
+        const windowHeading = result.windowMode === 'fixed' ? 'Window' : 'Prescience (# - cast - duration)';
         [windowHeading, state.metric === 'average' ? 'Targets (damage)' : 'Targets (DPS)'].forEach(
           (title) => headRow.append(el('th', '', title)),
         );
@@ -755,15 +752,11 @@
           let windowText;
           if (result.windowMode === 'fixed') {
             windowText = `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
-          } else if (!castInfo) {
-            windowText = `#${window.index + 1}`;
-          } else if (result.windowMode === 'prescience-buff') {
-            const buffMs = result.prescienceDurationMs ?? 18_000;
-            const fightMs = reference.endTime - reference.startTime;
-            const end = Math.min(castInfo.startTime + buffMs, fightMs);
-            windowText = `#${window.index + 1} · ${clock(castInfo.startTime)}–${clock(end)}`;
+          } else if (castInfo) {
+            const seconds = (castInfo.durationMs / 1000).toFixed(1);
+            windowText = `#${window.index + 1} - ${clock(castInfo.startTime)} - ${seconds}s`;
           } else {
-            windowText = `#${window.index + 1} · ${clock(castInfo.startTime)}`;
+            windowText = `#${window.index + 1}`;
           }
           const timeCell = el('td', 'time', windowText);
           if (window.castTarget) timeCell.title = `Prescience cast on ${window.castTarget.name}`;

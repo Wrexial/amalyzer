@@ -46,65 +46,46 @@ export function buildWindows(durationMs: number, options: WindowOptions = {}): T
   return windows;
 }
 
-/**
- * Builds one window per Prescience cast: `[cast, next cast)`.
- *
- * The last cast runs to the end of the fight. Cast timestamps are
- * report-relative (WCL events use report time); the resulting windows are
- * fight-relative and deduplicated. Window N is the Nth Prescience, so it lines
- * up with the same cast of every pull.
- */
-export function buildPrescienceIntervals(
-  castTimestamps: number[],
-  fightStartTime: number,
-  durationMs: number,
-): TimeWindow[] {
-  const starts = [
-    ...new Set(
-      castTimestamps
-        .map((timestamp) => Math.round(timestamp) - fightStartTime)
-        .filter((startTime) => startTime >= 0 && startTime < durationMs),
-    ),
-  ].sort((a, b) => a - b);
-
-  return starts.map((startTime, index) => ({
-    index,
-    startTime,
-    endTime: index + 1 < starts.length ? starts[index + 1]! - 1 : durationMs - 1,
-  }));
-}
+export type PrescienceCastWindow = {
+  /** Report-relative timestamp of the cast. */
+  timestamp: number;
+  /** Exclusive report-relative end of the aura this cast applied. */
+  endTimestamp?: number;
+};
 
 /**
- * Builds one window per Prescience cast: `[cast, cast + buffDuration)`.
+ * Builds one window per Prescience cast, using the aura's actual lifetime when
+ * the log provides it (`applybuff` -> `removebuff`/`refreshbuff`).
  *
- * Use this when the question is "what did the buffed raid do while the buff was
- * up" rather than "what happened between casts". Windows overlap when casts
- * are closer together than the buff duration (they usually are: 2 charges on a
- * 12s recharge means a cast every ~6s, while the buff lasts 18s).
- *
- * Cast timestamps are report-relative; the resulting windows are fight-relative
- * and clipped to the fight's end.
+ * Falls back to `fallbackDurationMs` when the cast has no matched aura or the
+ * log is missing the removal. Times are report-relative in, fight-relative out;
+ * windows are deduplicated by start time and clipped to the fight.
  */
 export function buildPrescienceWindows(
-  castTimestamps: number[],
+  casts: PrescienceCastWindow[],
   fightStartTime: number,
   durationMs: number,
-  buffDurationMs: number,
+  fallbackDurationMs: number,
 ): TimeWindow[] {
-  if (buffDurationMs <= 0) throw new Error('buffDurationMs must be > 0');
+  if (fallbackDurationMs <= 0) throw new Error('fallbackDurationMs must be > 0');
 
   const windows: TimeWindow[] = [];
   const seen = new Set<number>();
 
-  for (const timestamp of [...castTimestamps].sort((a, b) => a - b)) {
-    const startTime = Math.round(timestamp) - fightStartTime;
+  for (const cast of [...casts].sort((a, b) => a.timestamp - b.timestamp)) {
+    const startTime = Math.round(cast.timestamp) - fightStartTime;
     if (startTime < 0 || startTime >= durationMs || seen.has(startTime)) continue;
     seen.add(startTime);
+
+    const endExclusive =
+      cast.endTimestamp != null
+        ? Math.round(cast.endTimestamp) - fightStartTime
+        : startTime + fallbackDurationMs;
 
     windows.push({
       index: windows.length,
       startTime,
-      endTime: Math.min(startTime + buffDurationMs - 1, durationMs - 1),
+      endTime: Math.min(Math.max(startTime, endExclusive - 1), durationMs - 1),
     });
   }
 
