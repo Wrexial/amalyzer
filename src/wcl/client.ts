@@ -42,6 +42,44 @@ export type WCLClientOptions = {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Process-wide response cache. Netlify keeps warm function instances around, so
+ * repeated analyses of the same report/windows avoid hitting WCL again.
+ *
+ * Scope by client id (or token) so private reports can never leak between
+ * callers. Entries are bounded and LRU-ish (Map insertion order).
+ */
+type ResponseCacheEntry = { data: unknown; expiresAt: number };
+
+const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000;
+const RESPONSE_CACHE_MAX = 250;
+const responseCache = new Map<string, ResponseCacheEntry>();
+
+function cacheKey(scope: string, query: string, variables: Record<string, unknown>) {
+  return `${scope}|${query}|${JSON.stringify(variables)}`;
+}
+
+function readCachedResponse(key: string): unknown | undefined {
+  const entry = responseCache.get(key);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expiresAt) {
+    responseCache.delete(key);
+    return undefined;
+  }
+  // Refresh LRU position.
+  responseCache.delete(key);
+  responseCache.set(key, entry);
+  return entry.data;
+}
+
+function writeCachedResponse(key: string, data: unknown) {
+  if (responseCache.size >= RESPONSE_CACHE_MAX) {
+    const oldest = responseCache.keys().next().value;
+    if (oldest != null) responseCache.delete(oldest);
+  }
+  responseCache.set(key, { data, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
+}
+
+/**
  * Thin GraphQL client over the WCL v2 API.
  *
  * Design choices that matter in practice:
@@ -104,6 +142,11 @@ export class WCLClient {
     query: string,
     variables: Record<string, unknown> = {},
   ): Promise<T> {
+    const scope = this.#credentials?.clientId ?? 'token';
+    const key = cacheKey(scope, query, variables);
+    const cached = readCachedResponse(key);
+    if (cached !== undefined) return cached as T;
+
     let refreshedToken = false;
 
     for (let attempt = 0; ; attempt += 1) {
@@ -154,6 +197,7 @@ export class WCLClient {
         );
       }
 
+      writeCachedResponse(key, body.data);
       return body.data;
     }
   }

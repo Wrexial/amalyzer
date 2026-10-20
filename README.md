@@ -79,6 +79,23 @@ Netlify UI: **Project configuration → Build & deploy → Link repository** and
 `Wrexial/amalyzer` (build `npm run build`, publish `public`). After that, every
 push to `main` deploys.
 
+## Caching
+
+Two layers keep repeated analyses from hammering Warcraft Logs:
+
+- **WCL response cache (server)** — every successful GraphQL response is cached
+  in memory for 10 minutes, scoped by client id (or token) so private reports
+  cannot leak between callers. The cache is bounded (250 entries, LRU-ish) and
+  lives in the Netlify function's warm instance. Cold starts start empty.
+- **API cache (browser)** — `/api/meta` and `/api/damage` responses are stored
+  in `localStorage` for 30 minutes, keyed by a hash of the client id and the
+  request body, versioned by prefix, and capped by entry count/bytes. Repeating
+  the same analysis, filter-free comparison, or saved-report load is instant.
+
+The query panel has **Ignore cache** (bypass reads for one run) and **Clear
+cache** (drop the local API cache). Reports are immutable enough for these
+windows; bump the cache prefix if the `AnalyzeResult` shape changes.
+
 ## Pipeline
 
 ```

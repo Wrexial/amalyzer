@@ -459,7 +459,11 @@
         <div class="row" style="margin-top: 16px">
           <button id="analyze">Analyze</button>
           <button id="load" class="ghost">Load fights</button>
-          <button id="logout" class="ghost" style="margin-left: auto">Disconnect</button>
+          <label class="check" for="noCache">
+            <input id="noCache" type="checkbox" /> Ignore cache
+          </label>
+          <button id="clearCache" class="ghost" style="margin-left: auto">Clear cache</button>
+          <button id="logout" class="ghost">Disconnect</button>
         </div>
         <p class="hint">
           <code>Load fights</code> fills the fight list from the report. Each window is a Prescience
@@ -543,6 +547,10 @@
       };
       const STORAGE_KEY = 'amalyzer.wcl-credentials';
       const REPORTS_KEY = 'amalyzer.saved-reports';
+      const API_CACHE_PREFIX = 'amalyzer.api-cache.v1.';
+      const API_CACHE_TTL_MS = 30 * 60 * 1000;
+      const API_CACHE_MAX_ENTRIES = 20;
+      const API_CACHE_MAX_BYTES = 1_500_000;
 
       function readCredentials() {
         try {
@@ -747,7 +755,105 @@
         el.className = kind;
       }
 
-      async function api(path, body) {
+      function hashString(value) {
+        let hash = 2166136261;
+        for (let i = 0; i < value.length; i += 1) {
+          hash ^= value.charCodeAt(i);
+          hash = Math.imul(hash, 16777619);
+        }
+        return (hash >>> 0).toString(36);
+      }
+
+      function apiCacheKey(path, body) {
+        const credentials = readCredentials();
+        const scope = hashString(credentials?.clientId ?? 'anonymous');
+        return `${API_CACHE_PREFIX}${scope}:${path}:${hashString(JSON.stringify(body ?? {}))}`;
+      }
+
+      function readApiCache(key) {
+        try {
+          const entry = JSON.parse(localStorage.getItem(key) || 'null');
+          if (!entry || typeof entry.expiresAt !== 'number') return null;
+          if (Date.now() > entry.expiresAt) {
+            localStorage.removeItem(key);
+            return null;
+          }
+          return entry.data;
+        } catch {
+          return null;
+        }
+      }
+
+      function pruneApiCache() {
+        try {
+          const entries = [];
+          for (let i = 0; i < localStorage.length; i += 1) {
+            const key = localStorage.key(i);
+            if (!key || !key.startsWith(API_CACHE_PREFIX)) continue;
+
+            const raw = localStorage.getItem(key);
+            let expiresAt = 0;
+            try {
+              expiresAt = JSON.parse(raw || 'null')?.expiresAt ?? 0;
+            } catch {
+              expiresAt = 0;
+            }
+
+            if (!expiresAt || Date.now() > expiresAt) localStorage.removeItem(key);
+            else entries.push({ key, expiresAt });
+          }
+
+          entries.sort((a, b) => a.expiresAt - b.expiresAt);
+          while (entries.length > API_CACHE_MAX_ENTRIES) {
+            const oldest = entries.shift();
+            if (oldest) localStorage.removeItem(oldest.key);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      function writeApiCache(key, data) {
+        try {
+          const payload = JSON.stringify({ expiresAt: Date.now() + API_CACHE_TTL_MS, data });
+          if (payload.length > API_CACHE_MAX_BYTES) return;
+          localStorage.setItem(key, payload);
+          pruneApiCache();
+        } catch {
+          // Quota exceeded: drop the API cache and try once more.
+          try {
+            clearApiCache();
+            localStorage.setItem(
+              key,
+              JSON.stringify({ expiresAt: Date.now() + API_CACHE_TTL_MS, data }),
+            );
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      function clearApiCache() {
+        try {
+          const keys = [];
+          for (let i = 0; i < localStorage.length; i += 1) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith(API_CACHE_PREFIX)) keys.push(key);
+          }
+          keys.forEach((key) => localStorage.removeItem(key));
+        } catch {
+          /* ignore */
+        }
+      }
+
+      async function api(path, body, options = {}) {
+        const cacheable = path === '/api/meta' || path === '/api/damage';
+        const key = cacheable ? apiCacheKey(path, body) : null;
+        if (cacheable && !options.bypass) {
+          const cached = readApiCache(key);
+          if (cached != null) return cached;
+        }
+
         const credentials = readCredentials();
         const headers = { 'Content-Type': 'application/json' };
         if (credentials) {
@@ -762,6 +868,8 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+
+        if (cacheable) writeApiCache(key, data);
         return data;
       }
 
@@ -798,6 +906,11 @@
         }
       });
 
+      $('clearCache').addEventListener('click', () => {
+        clearApiCache();
+        setStatus('Local cache cleared.', 'ok');
+      });
+
       $('logout').addEventListener('click', () => {
         writeCredentials(null);
         showLoggedIn(false);
@@ -820,7 +933,7 @@
         $('load').disabled = true;
         setStatus('Loading fights…');
         try {
-          const meta = await api('/api/meta', { report });
+          const meta = await api('/api/meta', { report }, { bypass: $('noCache').checked });
           state.fights = meta.fights;
 
           const augSelect = $('augmenter');
@@ -930,8 +1043,9 @@
         $('compare').disabled = true;
         setStatus('Analyzing both runs…');
         try {
-          const left = await api('/api/damage', leftBody);
-          const right = await api('/api/damage', rightBody);
+          const bypass = $('noCache').checked;
+          const left = await api('/api/damage', leftBody, { bypass });
+          const right = await api('/api/damage', rightBody, { bypass });
           saveReport(leftReport, left.report);
           if (rightReport !== leftReport) saveReport(rightReport, right.report);
           renderComparison(left, right);
@@ -963,7 +1077,7 @@
             windowMs: Number($('windowMs').value),
             offsetMs: Number($('offsetMs').value),
             slots: Number($('slots').value),
-          });
+          }, { bypass: $('noCache').checked });
           saveReport($('report').value, result.report);
           render(result);
           setStatus('', '');
