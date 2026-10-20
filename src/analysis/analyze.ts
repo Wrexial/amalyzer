@@ -60,6 +60,8 @@ export type AnalyzeWindow = {
   startTime: number;
   endTime: number;
   entries: AnalyzeWindowEntry[];
+  /** Actor this row's Prescience was cast on, when known. */
+  castTarget?: { key: string; name: string };
   assignments: {
     key: string;
     name: string;
@@ -72,14 +74,21 @@ export type AnalyzeWindow = {
   }[];
 };
 
+export type PrescienceCastInfo = {
+  /** Fight-relative start of the window this cast created. */
+  startTime: number;
+  /** Actor the Prescience was cast on, when WCL logged a target. */
+  target?: { key: string; name: string };
+};
+
 export type AnalyzeFight = Pick<
   ReportFight,
   'id' | 'encounterID' | 'name' | 'kill' | 'difficulty' | 'startTime' | 'endTime'
 > & {
   /** Fight-relative phase boundaries parsed from WCL's report-relative transitions. */
   phases: PhaseBoundary[];
-  /** Fight-relative start of each Prescience window (empty in fixed mode). */
-  casts?: number[];
+  /** One entry per Prescience window (empty in fixed mode). */
+  casts?: PrescienceCastInfo[];
 };
 
 export type AnalyzeResult = {
@@ -157,22 +166,48 @@ export async function analyzeReport(
     ...(options.maxWindows ? { maxWindows: options.maxWindows } : {}),
   });
 
+  const lookup = buildActorLookup(meta);
+
   // Prescience casts first: one window per cast, per fight. Fights differ in
   // cast count/timing, so each gets its own list; the window index is the cast
   // ordinal, which keeps "the Nth Prescience" comparable across pulls.
   const castsByFightId = new Map<number, TimeWindow[]>();
+  const castInfoByFightId = new Map<number, PrescienceCastInfo[]>();
   let castsFound = 0;
 
   if (windowMode !== 'fixed') {
     for (const fight of fights) {
       const casts = await fetchPrescienceCasts(client, code, fight);
+      const timestamps = casts.map((cast) => cast.timestamp);
       const duration = fight.endTime - fight.startTime;
       castsFound += casts.length;
-      castsByFightId.set(
-        fight.id,
+
+      const windows =
         windowMode === 'prescience-buff'
-          ? buildPrescienceWindows(casts, fight.startTime, duration, prescienceDurationMs)
-          : buildPrescienceIntervals(casts, fight.startTime, duration),
+          ? buildPrescienceWindows(timestamps, fight.startTime, duration, prescienceDurationMs)
+          : buildPrescienceIntervals(timestamps, fight.startTime, duration);
+      castsByFightId.set(fight.id, windows);
+
+      const targetByStart = new Map<number, { key: string; name: string }>();
+      for (const cast of casts) {
+        if (!cast.targetID) continue;
+        const actor = lookup.get(cast.targetID);
+        if (!actor) continue;
+
+        const startTime = Math.round(cast.timestamp) - fight.startTime;
+        if (!targetByStart.has(startTime)) {
+          targetByStart.set(startTime, { key: actor.key, name: actor.name });
+        }
+      }
+
+      castInfoByFightId.set(
+        fight.id,
+        windows.map((window) => ({
+          startTime: window.startTime,
+          ...(targetByStart.has(window.startTime)
+            ? { target: targetByStart.get(window.startTime)! }
+            : {}),
+        })),
       );
     }
   }
@@ -180,9 +215,7 @@ export async function analyzeReport(
   // No casts (no Aug Evoker in the pull, or a mode change) -> fixed grid.
   const effectiveMode: WindowMode = windowMode !== 'fixed' && castsFound > 0 ? windowMode : 'fixed';
 
-  const lookup = buildActorLookup(meta);
   const perFight: { windows: TimeWindow[]; damage: WindowDamage[] }[] = [];
-  const castStartsByFightId = new Map<number, number[]>();
 
   for (const fight of fights) {
     const duration = fight.endTime - fight.startTime;
@@ -198,10 +231,6 @@ export async function analyzeReport(
     });
 
     perFight.push({ windows, damage });
-    castStartsByFightId.set(
-      fight.id,
-      windows.map((window) => window.startTime),
-    );
   }
 
   if (!perFight.length) {
@@ -224,7 +253,27 @@ export async function analyzeReport(
         entries: row.entries.filter((entry) => !excludedActors.has(entry.actor.key)),
       }))
     : aggregated;
-  const assignments = buildAssignments(visible, { slots });
+
+  // The aggregated window N can come from different pulls; use the longest
+  // fight's cast target for each ordinal (falling back to shorter fights).
+  const castTargetByIndex = new Map<number, { key: string; name: string }>();
+  const fightsLongestFirst = [...fights].sort(
+    (a, b) => b.endTime - b.startTime - (a.endTime - a.startTime),
+  );
+  for (const fight of fightsLongestFirst) {
+    (castInfoByFightId.get(fight.id) ?? []).forEach((cast, index) => {
+      if (cast.target && !castTargetByIndex.has(index)) castTargetByIndex.set(index, cast.target);
+    });
+  }
+
+  const forcedByIndex = new Map<number, string>();
+  for (const [index, target] of castTargetByIndex) forcedByIndex.set(index, target.key);
+
+  const assignments = buildAssignments(visible, {
+    slots,
+    forcedByIndex,
+    excluded: excludedActors,
+  });
   const assignmentByIndex = new Map(assignments.map((assignment) => [assignment.window.index, assignment]));
 
   return {
@@ -247,13 +296,16 @@ export async function analyzeReport(
       endTime: fight.endTime,
       phases: fightPhases(fight),
       ...(effectiveMode !== 'fixed'
-        ? { casts: castStartsByFightId.get(fight.id) ?? [] }
+        ? { casts: castInfoByFightId.get(fight.id) ?? [] }
         : {}),
     })),
     windows: visible.map((row) => ({
       index: row.window.index,
       startTime: row.window.startTime,
       endTime: row.window.endTime,
+      ...(castTargetByIndex.has(row.window.index)
+        ? { castTarget: castTargetByIndex.get(row.window.index)! }
+        : {}),
       entries: row.entries.map((entry) => ({
         key: entry.actor.key,
         name: entry.actor.name,

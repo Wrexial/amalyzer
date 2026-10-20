@@ -149,10 +149,21 @@ async function commandDamage(client: WCLClient, input: string, flags: Flags) {
   for (const window of windows) {
     const label = `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
     const top = window.assignments
-      .map((slot) => `${slot.name}${slot.priority ? '*' : ''} ${fmt(slot.dps)}`)
+      .map((slot) => {
+        const mark = slot.priority
+          ? '*'
+          : window.castTarget?.key === slot.key
+            ? '^'
+            : '';
+        return `${slot.name}${mark} ${fmt(slot.dps)}`;
+      })
       .join('   ');
 
     console.log(`  ${label.padEnd(14)} ${top}`);
+  }
+
+  if (result.windowMode !== 'fixed') {
+    console.log('\n  ^ = Prescience cast target (forced into the slots)');
   }
 
   const { limit, points } = result.rateLimit;

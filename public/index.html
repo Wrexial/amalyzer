@@ -151,6 +151,13 @@
       .target-name .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .target.prio .target-name { color: var(--accent); }
 
+      .target.prescience {
+        border: 1px solid var(--accent);
+        background: color-mix(in srgb, var(--accent) 8%, transparent);
+        border-radius: 8px;
+        padding: 5px 7px;
+      }
+
       .class-icon { width: 16px; height: 16px; border-radius: 3px; flex: none; }
       .class-deathknight { color: #c41f3b; }
       .class-demonhunter { color: #a330c9; }
@@ -418,15 +425,29 @@
 
       /**
        * Post-analysis filter: hides Augmentation Evokers and refills the slots
-       * from the same window's entries instead of re-querying WCL.
+       * from the same window's entries instead of re-querying WCL. The Prescience
+       * cast target is kept (or forced into the last slot) unless it was hidden.
        */
       function displayedAssignments(window) {
+        const limit = window.assignments.length;
         if (!$('hideAug').checked) return window.assignments;
+        if (!limit) return [];
 
-        return window.entries
+        const picked = window.entries
           .filter((entry) => !isAugEvoker(entry))
-          .slice(0, window.assignments.length)
+          .slice(0, limit)
           .map((entry) => ({ ...entry, priority: false }));
+
+        const targetKey = window.castTarget?.key;
+        if (targetKey && !picked.some((entry) => entry.key === targetKey)) {
+          const targetEntry = window.entries.find((entry) => entry.key === targetKey);
+          if (targetEntry && !isAugEvoker(targetEntry)) {
+            if (picked.length < limit) picked.push({ ...targetEntry, priority: false });
+            else picked[limit - 1] = { ...targetEntry, priority: false };
+          }
+        }
+
+        return picked;
       }
 
       function setStatus(message, kind = '') {
@@ -636,10 +657,10 @@
           // In Prescience mode the nth row is the nth cast, so use the reference
           // fight's cast time for phase grouping (the aggregate time comes from
           // whichever fight was processed last).
-          const referenceStart = reference?.casts?.[window.index];
+          const phaseCast = reference?.casts?.[window.index];
           const phaseTime =
-            result.windowMode !== 'fixed' && referenceStart != null
-              ? referenceStart
+            result.windowMode !== 'fixed' && phaseCast
+              ? phaseCast.startTime
               : window.startTime;
           const phase = phases.length ? phaseAt(phases, phaseTime) : undefined;
           const phaseId = phase ? phase.id : undefined;
@@ -659,14 +680,16 @@
           }
 
           const row = el('tr');
-          const castStart = reference?.casts?.[window.index];
+          const castInfo = reference?.casts?.[window.index];
           const windowText =
             result.windowMode !== 'fixed'
-              ? castStart != null
-                ? `#${window.index + 1} · ${clock(castStart)}`
+              ? castInfo
+                ? `#${window.index + 1} · ${clock(castInfo.startTime)}`
                 : `#${window.index + 1}`
               : `${clock(window.startTime)}–${clock(window.endTime + 1)}`;
-          row.append(el('td', 'time', windowText));
+          const timeCell = el('td', 'time', windowText);
+          if (window.castTarget) timeCell.title = `Prescience cast on ${window.castTarget.name}`;
+          row.append(timeCell);
 
           const cell = el('td');
           const targets = el('div', 'targets');
@@ -674,7 +697,14 @@
           const max = Math.max(...assignments.map(metricValue), 1);
 
           assignments.forEach((slot) => {
-            const target = el('div', 'target' + (slot.priority ? ' prio' : ''));
+            const isCastTarget = window.castTarget?.key === slot.key;
+            const target = el(
+              'div',
+              'target' +
+                (slot.priority ? ' prio' : '') +
+                (isCastTarget ? ' prescience' : ''),
+            );
+            if (isCastTarget) target.title = 'Prescience cast target';
             const top = el('div', 'target-top');
             const slug = classSlug(slot.class);
             const name = el('span', 'target-name' + (slug ? ` class-${slug}` : ''));
@@ -704,6 +734,13 @@
         $('foot').replaceChildren(
           el('span', '', limit && points != null ? `Rate limit: ${points}/${limit} points` : ''),
           el('span', '', `Sorted by ${state.metric === 'average' ? 'damage' : 'DPS'} in each ${result.windowMode === 'fixed' ? 'window' : 'Prescience window'}; * = forced priority.`),
+          el(
+            'span',
+            '',
+            result.windowMode === 'fixed'
+              ? ''
+              : 'Highlighted = the Prescience cast target, forced into the slots when outside the top targets.',
+          ),
         );
       }
 

@@ -255,6 +255,14 @@ each window's slots from the remaining entries. Scripts can instead exclude them
 during analysis with `excludeAugmentation` / `--exclude-augmentation`, which
 removes them *before* `buildAssignments()` runs.
 
+Each window also knows the actor its Prescience was cast on (`castTarget`, from
+the cast event's `targetID`). The UI outlines that player's card, and
+`buildAssignments()` forces them into the row: if they are outside the top N
+they replace the last pick (never a `priority` pick). Aggregated rows use the
+longest selected fight's target for that cast ordinal. With the Aug filter on,
+the same rule is re-applied to the filtered slots unless the target itself was
+hidden. The CLI marks these players with `^`.
+
 ## The "best logs" path
 
 Instead of asking the user for report URLs, you can find good kills yourself:
